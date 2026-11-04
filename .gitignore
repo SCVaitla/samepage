@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime data
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.cache/
+reports/*.tmp
+
+# OS
+.DS_Store
