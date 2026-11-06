@@ -1,0 +1,45 @@
+# Juniper Desk is a FICTIONAL company invented for the SamePage demo.
+#
+# Each source family has:
+#   authority  1 = highest (approved). Advice to the human, never automatic truth.
+#   owner      who gets @mentioned when this source is on the losing side of a case,
+#              and who may rule on it. Replace with real usernames on your messaging app.
+#   surface    who reads this source; used to explain the blast radius.
+plans: [Starter, Pro, Enterprise]
+sources:
+  - id: product_spec
+    title: Product specification
+    paths: ["product_spec.md"]
+    authority: 1
+    owner: "@product-owner"
+    surface: internal (approved source of truth)
+  - id: help_center
+    title: Help center
+    paths: ["help_center/*.md"]
+    authority: 2
+    owner: "@support-lead"
+    surface: customers (self-serve help)
+  - id: changelog
+    title: Changelog
+    paths: ["changelog.md"]
+    authority: 2
+    owner: "@product-owner"
+    surface: customers (release notes)
+  - id: website
+    title: Website
+    paths: ["website/*.md"]
+    authority: 3
+    owner: "@marketing-lead"
+    surface: public (prospects and customers)
+  - id: sales_faq
+    title: Sales FAQ
+    paths: ["sales/faq.md"]
+    authority: 3
+    owner: "@sales-lead"
+    surface: sales team (said to prospects on calls)
+  - id: support_macros
+    title: Support macros
+    paths: ["support/macros.md"]
+    authority: 4
+    owner: "@support-lead"
+    surface: support team (pasted into customer replies)

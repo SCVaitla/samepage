@@ -1,0 +1,75 @@
+# Golden evaluation set (development cases C1–C6). Juniper Desk is FICTIONAL.
+# `truth` is the product spec's value (for the before/after consistency metric).
+# Expected states come from the brief (section 8) and are never edited to make a run pass.
+# C7 (prompt injection) is checked by a test, not by a question here.
+cases:
+  - id: C1
+    truth: "bool:false"  # the spec's value, as a normalized key
+    topic: SSO availability on Starter
+    expected: CONFLICT
+    canonical: Does the Starter plan include single sign-on?
+    paraphrases:
+      - Is SSO available on Starter?
+      - Can a team on the Starter plan log in with SAML single sign-on?
+      - starter plan sso - yes or no?
+      - Would a Starter workspace be able to turn on single sign-on?
+      - Do Starter customers get SSO?
+
+  - id: C2
+    truth: "days:14"  # the spec's value, as a normalized key
+    topic: Refund window
+    expected: CONFLICT
+    canonical: How many days do customers have to request a refund?
+    paraphrases:
+      - What is the refund window?
+      - How long after paying can I get my money back?
+      - Within how many days of purchase is a full refund possible?
+      - refund deadline?
+      - If a customer changes their mind, how much time do they have to ask for a refund?
+
+  - id: C3
+    truth: "seats:5"  # the spec's value, as a normalized key
+    topic: Starter seat limit
+    expected: SOURCE_CONFLICT
+    canonical: How many seats does a Starter workspace allow?
+    paraphrases:
+      - What is the seat limit on the Starter plan?
+      - How many members can a Starter workspace have?
+      - max users on starter?
+      - On Starter, how many people can we add to one workspace?
+      - What's the most seats a Starter plan supports?
+
+  - id: C4
+    truth: "schedule:24x7"  # the spec's value, as a normalized key
+    topic: Support hours
+    expected: COMPATIBLE
+    canonical: What are the support hours?
+    paraphrases:
+      - When is the support team available?
+      - Is support available on weekends?
+      - What hours can customers reach support?
+      - support availability?
+      - Can I get help from support at night?
+
+  - id: C5
+    truth: "per_min:1000"  # the spec's value, as a normalized key
+    topic: Pro API rate limit
+    expected: COMPATIBLE
+    canonical: What is the API rate limit on the Pro plan?
+    paraphrases:
+      - How many API requests per minute does Pro allow?
+      - Pro plan rate limit for the REST API?
+      - What's the requests-per-minute cap for a Pro workspace?
+      - How fast can a Pro workspace call the API before getting throttled?
+      - rate limit pro api
+
+  - id: C6
+    topic: HIPAA compliance
+    expected: UNSUPPORTED
+    canonical: Is Juniper Desk HIPAA compliant?
+    paraphrases:
+      - Does Juniper Desk support HIPAA?
+      - Can healthcare customers use Juniper Desk under HIPAA?
+      - Will Juniper Desk sign a business associate agreement for HIPAA?
+      - hipaa compliance?
+      - Is Juniper Desk certified for HIPAA workloads?

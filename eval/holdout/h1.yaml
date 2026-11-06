@@ -1,0 +1,27 @@
+# HELD-OUT case H1. Juniper Desk is FICTIONAL.
+#
+# Rules (brief, sections 8 and 9):
+#   * Applied ONLY by `make eval-holdout`, into a temporary copy of the corpus.
+#   * No test, threshold, glossary entry, prompt or normalizer may be tuned on it.
+#   * Whatever the result, report it as it is.
+id: H1
+topic: Admin audit log retention
+expected: CONFLICT
+truth: "days:365"
+canonical: How long is the admin audit log retained?
+paraphrases:
+  - How long do you keep audit log entries?
+  - What's the retention period for the audit log?
+  - For how many days can admins look back in the audit log?
+  - audit log retention?
+  - When are audit log events deleted?
+inserts:
+  - path: product_spec.md
+    after_heading: "## 7. Data, security and compliance"
+    text: |
+      The admin audit log (Enterprise) records sign-ins, permission changes, exports and
+      deletions. Audit log entries are retained for 365 days and can be exported as CSV.
+  - path: website/pricing.md
+    after_heading: "## Enterprise: let's talk"
+    text: |
+      Admin audit log entries are kept for 90 days.

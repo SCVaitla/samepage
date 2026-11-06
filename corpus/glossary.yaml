@@ -1,0 +1,14 @@
+# Juniper Desk is a FICTIONAL company invented for the SamePage demo.
+#
+# Company glossary: phrases in one group mean the same thing. SamePage uses it to
+# find every passage about a fact, whichever words a team used. Maintained by the
+# docs owners, like any other doc. Longer phrases are matched first.
+groups:
+  sso: ["single sign-on", "single sign on", "sso", "saml"]
+  seat: ["seats", "seat", "members", "member", "users", "user", "people", "teammates"]
+  refund: ["refunds", "refund", "money back", "money-back", "reimbursement"]
+  support: ["support team", "support", "help desk", "customer success"]
+  api: ["api", "rest api"]
+  rate_limit: ["rate limit", "rate limits", "rate-limit", "requests per minute", "requests/min", "req/min", "rpm", "throttle", "throttling"]
+  workspace: ["workspace", "workspaces", "account"]
+  plan: ["plans", "plan", "tier", "tiers", "subscription"]
