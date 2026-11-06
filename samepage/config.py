@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     batch_size: int = Field(default=6, alias="SAMEPAGE_BATCH_SIZE")
     retest_questions: int = Field(default=4, alias="SAMEPAGE_RETEST_QUESTIONS")
     golden_path: Path = Field(default=Path("eval/golden.yaml"), alias="SAMEPAGE_GOLDEN")
+    holdout_path: Path = Field(default=Path("eval/holdout/h1.yaml"), alias="SAMEPAGE_HOLDOUT")
     reports_dir: Path = Field(default=Path("reports"), alias="SAMEPAGE_REPORTS_DIR")
 
     def desk_map(self) -> dict[str, str]:

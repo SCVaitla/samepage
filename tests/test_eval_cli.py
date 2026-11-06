@@ -84,3 +84,32 @@ def test_cli_check_corpus_and_eval(
     main(["eval"])
     assert "| Conflict detection precision | 1.00" in capsys.readouterr().out
     assert len(list((tmp_path / "reports").glob("eval-*.md"))) >= 1
+
+
+def test_cli_register_and_rooms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import httpx
+
+    seen: list[tuple[str, dict[str, str]]] = []
+
+    def fake_post(url: str, **kw: object) -> httpx.Response:
+        seen.append((url, kw.get("headers", {})))  # type: ignore[arg-type]
+        request = httpx.Request("POST", url)
+        if url.endswith("/agents"):
+            return httpx.Response(200, json={"id": "agent-9", "api_key": "secret-key"}, request=request)
+        return httpx.Response(200, json={"result": [{"id": "room-1", "name": "samepage-ask"}]}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.delenv("SWITCH_REGISTRATION_TOKEN", raising=False)
+    env = tmp_path / ".env"
+    with pytest.raises(SystemExit, match="personal registration key"):
+        main(["register", "--env-file", str(env)])
+    monkeypatch.setenv("SWITCH_REGISTRATION_TOKEN", "reg-token")
+    main(["register", "--env-file", str(env)])
+    out = capsys.readouterr().out
+    assert "agent-9" in out and "secret-key" not in out
+    assert "SWITCH_AGENT_API_KEY=secret-key" in env.read_text()
+    assert seen[0][1]["Authorization"] == "Bearer reg-token"
+    main(["rooms"])
+    assert "samepage-ask" in capsys.readouterr().out

@@ -2,25 +2,144 @@
 
 **SamePage turns disagreements between AI agents into an investigation, a human decision, and a verified fix.**
 
-> Status: **Phase 0 (discovery spike).** Nothing below is a working product yet. See `docs/adr/0001-switch-integration.md` for what has been verified about Switch, and `docs/PHASE0_RUNBOOK.md` for the live checks still to run.
+Companies keep the same product facts in many places: the spec, the website, the help center, the sales FAQ, support macros. Those copies drift apart. AI agents answering from them give inconsistent answers, and nobody notices until a customer does. SamePage asks **two different agents** the same question **without letting them see each other's answer**. When they disagree, or agree while the docs don't, it shows the evidence, asks the owners to rule, opens a pull request, and proves the fix with a retest.
 
-Built for the Flip the Switch hackathon (Best Business Workflow). Juniper Desk, the company in every example, is fictional.
+Built for Flip the Switch (Best Business Workflow). *Juniper Desk, the company in every example, is fictional.*
 
-## How Switch is used (planned, per ADR 0001)
+> **Status (2026-11-05):** engine, arbiter, template and tests are built and pass in CI-equivalent checks. The **live run on a real Switch server has not happened yet** (`docs/RUNBOOK.md`), so live behaviour and detection metrics are unverified. See [Known limitations](#known-limitations).
 
-- The SamePage Arbiter is a Switch **agent** of its own. It speaks the agent protocol: SSE in, HTTP out.
-- Claude Code and Codex each answer in a **private desk room**. Switch only lets an agent read rooms it belongs to, so neither can see the other's answer. The arbiter reveals both together.
-- Humans rule in the room: `@samepage-arbiter approve <case>`.
-- The rooms, agents and their instructions are declared in a Switch **template** (`switch/`).
+## How Switch is used
 
-## Repo layout (so far)
+Switch is the backbone, not a plugin. Without it there are no sealed rooms, no agents to compare, and nowhere for the human to rule.
 
-| Path | What |
-|---|---|
-| `CLAUDE.md` | The build brief: the rules every coding session follows |
-| `docs/adr/` | Architecture decisions |
-| `docs/PHASE0_RUNBOOK.md` | Steps to run the Gate 0 checks on a real Switch server |
-| `docs/evidence/` | Screenshots and logs proving each gate |
-| `switch/phase0-spike.template.yaml` | Switch template: the smoke room, the ask room and two private desks |
-| `spike/` | Throwaway Phase 0 arbiter: protocol client and sealing logic, with tests |
-| `samepage/`, `corpus/`, `eval/`, `tests/` | Empty until Phases 2–3 |
+| Piece | Switch feature | Where |
+|---|---|---|
+| **The SamePage Arbiter is itself a Switch agent** | Agent protocol: register once, SSE stream in, HTTP posts out, 2 s heartbeat | `samepage/switch_client.py`, `samepage/arbiter.py` |
+| **Sealed answers** | Each worker gets a *private desk room*; Switch only lets an agent read rooms it is a member of | `switch/samepage.template.yaml`, ADR 0001 |
+| **Two different agents** | Claude Code and Codex, run by Switch Console, each with the docs repo cloned through `repo:` | template `agents:` |
+| **Human ruling in the chat** | Addressed messages to the arbiter (`@samepage-arbiter approve <case>`) | `samepage/decide.py` |
+| **The fix** | A fixer agent with a GitHub connection, in its own private room | template, `samepage/fixer.py` |
+| **One-click setup** | A Switch YAML template: 3 agents, 5 rooms, links | `switch/samepage.template.yaml` |
+
+```mermaid
+sequenceDiagram
+  actor H as Teammate / owner
+  participant Ask as samepage-ask (room)
+  participant Arb as SamePage Arbiter (Switch agent)
+  participant DA as desk-claude (private)
+  participant DB as desk-codex (private)
+  participant Fix as samepage-fix (private)
+  H->>Ask: @samepage-arbiter ask Does Starter include SSO?
+  Ask-->>Arb: SSE message event
+  par sealed
+    Arb->>DA: @samepage-claude [batch] q1
+    Arb->>DB: @samepage-codex [batch] q1
+  end
+  DA-->>Arb: JSON claims + verbatim quotes (sealed: sha256 + time)
+  DB-->>Arb: JSON claims + verbatim quotes (sealed: sha256 + time)
+  Arb->>Ask: Card: both answers revealed, evidence, blast radius, owners
+  H->>Ask: @samepage-arbiter approve <case>
+  Arb->>Fix: Fix brief (exact lines)
+  Fix-->>Arb: [fix case] PR: url
+  Arb->>Arb: Diff guard (only approved lines), then retest on the branch
+  Arb->>Ask: Retest card: 0/3 before → 3/3 after · RESOLVED
+```
+
+## What it looks like
+
+A card from the end-to-end test (`tests/test_arbiter.py`), run against fake agents that cite real lines. Screenshots from the live run go in `docs/evidence/`.
+
+```
+#### SamePage case `9df9b224`: 🚨 CONFLICT
+Question: Does the Starter plan include single sign-on?
+Sealed answers (revealed together): samepage-claude: true · samepage-codex: false
+Evidence: bool:false  product_spec.md L44 (authority 1) · help_center/security-and-sso.md L14-16 · support/macros.md L30-31
+          bool:true   website/faq.md L20 (authority 3) · sales/faq.md L20-22
+Blast radius: the disputed value appears in 2 place(s) across 2 team(s)
+Proposed truth (advice, you decide): bool:false, from product_spec.md
+Owners asked to rule: @marketing-lead @sales-lead
+🛡 Ignored text that reads like instructions to AI agents: help_center/security-and-sso.md L29
+```
+
+## Features
+
+- **Sealed second opinion:** two agents answer separately; the audit log proves the order.
+- **Evidence or it didn't happen:** every quote is checked word for word at the cited lines.
+- **Agreement isn't proof:** the engine scans all the docs, so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`.
+- **Blast radius:** every place the wrong fact appears, and which team reads it.
+- **Owner routing:** the owners of the wrong docs are @mentioned and may rule.
+- **Drift patrol:** `@samepage-arbiter patrol` re-asks everything known, before a customer does.
+- **Source trust ledger:** `@samepage-arbiter trust` shows which docs keep losing rulings.
+- **Safe fix:** a PR that touches anything beyond the approved lines is refused; nothing is ever auto-merged.
+
+## Quickstart
+
+```sh
+make setup      # locked deps, git hooks, .env
+make check      # lint, mypy --strict, tests with coverage, bandit, pip-audit
+make seed       # what the engine sees in the docs
+make up         # engine API in Docker: http://localhost:8080/healthz
+```
+
+The live demo (Switch Console, Mattermost, the two agents, the docs repo) is set up step by step in **[docs/RUNBOOK.md](docs/RUNBOOK.md)**. In the room:
+
+```
+@samepage-arbiter ask <question>         @samepage-arbiter patrol [full | on <ref> | holdout]
+@samepage-arbiter approve <case> [why]   @samepage-arbiter override <case> <file>
+@samepage-arbiter reject <case> <why>    @samepage-arbiter trust | history <case or topic> | show <case>
+```
+
+## Outcome states
+
+| State | Meaning | Action |
+|---|---|---|
+| `VERIFIED` | Agents agree, quotes verified, no doc contradicts, same wording everywhere | Answer marked verified |
+| `COMPATIBLE` | Agree, docs word it differently ("24/7" vs "round-the-clock") | Treated as agreement, no alarm |
+| `CONFLICT` | Agents disagree (or one found nothing) | Card + owners rule |
+| `SOURCE_CONFLICT` | Agents agree, but another doc says otherwise | Card + owners rule |
+| `UNSUPPORTED` | No doc covers it, a quote failed, or an answer failed | Never shown as fact |
+| `RESOLVED` | Ruled, PR open, retest passed on the fix branch | Human merges |
+
+## Evaluation
+
+From `reports/eval-20261106T035622Z.md` (2026-11-06 03:56 UTC, commit `7ab8739`):
+
+| Metric | Result | Target |
+|---|---|---|
+| Question equivalence accuracy | 29/30 = 0.97 | ≥ 0.9 |
+| Conflict detection precision / recall | not run (no recorded agent answers) | ≥ 0.90 / ≥ 0.80 |
+| False alarms on COMPATIBLE | not run | 0 |
+| Evidence validity | not run | 100% |
+
+Held-out H1: not run yet. Detection numbers need a recorded live patrol (`@samepage-arbiter patrol full`, then `make eval`). They are reported only from real runs.
+
+## Architecture
+
+A Python service (FastAPI, Pydantic v2, SQLite in WAL mode) with no model calls of its own: the agents read, the engine verifies, normalizes, scans and classifies with plain code. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and the ADRs:
+[0001 Switch integration](docs/adr/0001-switch-integration.md) ·
+[0002 deterministic engine](docs/adr/0002-deterministic-engine.md) ·
+[0003 docs in git, batches, fixer](docs/adr/0003-docs-in-git-batch-dispatch-fixer.md) ·
+[0004 patrol, blast radius, owners, trust](docs/adr/0004-patrol-blast-radius-owners-trust.md).
+Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
+
+## Security
+
+- **Docs are data:** lines that read like instructions to AI are excluded from facts and shown as ignored; a test proves an injected line changes no outcome.
+- **Least privilege:** the engine's GitHub token is fine-grained, one repo, read-only. The fixer writes through the deployer's Switch GitHub connection. `main` is branch-protected, and SamePage has no merge call.
+- **Diff guard:** a PR is refused if it touches anything outside the approved lines, isn't on `samepage/<case>`, or isn't open.
+- **Authority in code:** only approvers and owners of the losing docs can rule.
+- **Untrusted input:** agent replies are size-capped and schema-validated, never executed. Git refs are validated. The audit log is append-only, enforced by database triggers.
+- Secrets only via `.env` (gitignored); gitleaks runs in CI and pre-commit; `bandit` and `pip-audit` report no findings.
+
+## Known limitations
+
+- **Not yet run live.** Switch behaviour is designed from the source at commit `7e1316f` but unconfirmed in five places (ADR 0001, U1–U5), including whether an always-on custom agent can post while streaming and whether an @mention from the arbiter wakes a Console-run agent.
+- **Detection metrics not yet measured** (see Evaluation).
+- **Lexical question matching:** "Does Juniper Desk support HIPAA?" maps to the support-hours question (the one miss in 30), and "Is there phone support?" scores 0.72 against support hours. A sentence-embedding backend can be plugged in (`Embedder` protocol).
+- **Value types are limited** to durations, seats, rates, 24/7 schedules, yes/no and plan availability. Other values are compared as text and not cross-checked across the docs.
+- **The 90-second answer target** depends on agent speed; the default timeout is 240 s.
+- `make up` is untested here: Docker wasn't available in the build environment.
+
+## What we'd build next
+
+Patrol on every docs push (a webhook into the room), more value types, sentence embeddings for question matching, and per-team trust trends over time.

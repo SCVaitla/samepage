@@ -22,5 +22,5 @@ reports/*.tmp
 
 # OS
 .DS_Store
-reports/
+
 .audit-requirements.txt

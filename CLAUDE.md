@@ -372,3 +372,14 @@ Precision ≥ 0.90, recall ≥ 0.80, false alarms on COMPATIBLE = 0, equivalence
 1. Restate this brief in 10 bullet points so the human can confirm understanding.
 2. Create the repo skeleton and `docs/` folder.
 3. Begin **Phase 0**. Report findings and the Gate 0 checklist before doing anything else.
+---
+
+## 16. Amendments (2026-11-05, approved by the human)
+
+These override the sections above where they conflict. Reasons are in the ADRs.
+
+1. **Room commands are @mentions**, not slash commands: `@samepage-arbiter ask|approve|override|reject|patrol|trust|history|show`. Switch replies "Unknown command" to custom `!`/`/` commands and does not forward them (ADR 0001, V8).
+2. **The engine makes no model calls** (ADR 0002). The worker agents extract claims; the engine verifies, normalizes, scans and classifies with plain code. Question equivalence is TF-IDF behind an `Embedder` protocol.
+3. **Docs live in a git repo** cloned into each agent by the template's `repo:` field; requests carry `[ref <ref>]`; questions go out in batches; a **fixer agent** opens the PR and the engine enforces a **diff guard** (ADR 0003).
+4. **New features** (ADR 0004): drift patrol, blast radius, owner routing (owners of losing sources may rule), source trust ledger. `history` stays; the trust ledger is what we demo.
+5. Gate 0 is still open: the live run in `docs/RUNBOOK.md` must happen before claiming any live behaviour. Engine work proceeded in parallel with the human's approval.

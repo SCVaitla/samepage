@@ -25,6 +25,55 @@ def cmd_arbiter(_: argparse.Namespace, s: Settings) -> None:
     asyncio.run(run(s))
 
 
+def cmd_register(args: argparse.Namespace, s: Settings) -> None:
+    """Register the arbiter with Switch (POST /agents) and append its id and key to .env."""
+    import os
+
+    import httpx
+
+    token = os.environ.get("SWITCH_REGISTRATION_TOKEN", "")
+    if not token:
+        raise SystemExit("Set SWITCH_REGISTRATION_TOKEN to YOUR personal registration key (see docs/RUNBOOK.md).")
+    body = {
+        "name": s.switch_agent_name,
+        "display_name": "SamePage",
+        "description": "SamePage Arbiter: collects sealed answers, checks evidence, records human rulings",
+        "connector_type": "SamePage Arbiter",
+        "integration_profile": {
+            "connection_model": "always_on",
+            "message_exchange": True,
+            "pre_invocation_mediation": [],
+            "post_invocation_mediation": [],
+            "event_reporting": [],
+        },
+    }
+    r = httpx.post(
+        f"{s.switch_api_url.rstrip('/')}/agents", json=body, timeout=15, headers={"Authorization": f"Bearer {token}"}
+    )
+    if r.status_code != 200:
+        raise SystemExit(f"Register failed: {r.status_code} {r.text[:300]}")
+    data = r.json()
+    with Path(args.env_file).open("a", encoding="utf-8") as f:  # the key is shown once; .env is gitignored
+        f.write(f"\nSWITCH_AGENT_ID={data['id']}\nSWITCH_AGENT_API_KEY={data['api_key']}\n")
+    print(f"Registered {s.switch_agent_name} as {data['id']}. The API key was written to {args.env_file}, not printed.")
+
+
+def cmd_rooms(_: argparse.Namespace, s: Settings) -> None:
+    """List the rooms the arbiter belongs to, with the ids to put in .env."""
+    import json
+
+    import httpx
+
+    r = httpx.post(
+        f"{s.switch_api_url.rstrip('/')}/agents/{s.switch_agent_id}/ops/list_rooms",
+        json={},
+        headers={"Authorization": f"Bearer {s.switch_agent_api_key}"},
+        timeout=15,
+    )
+    r.raise_for_status()
+    print(json.dumps(r.json().get("result"), indent=2)[:6000])
+
+
 def cmd_check_corpus(_: argparse.Namespace, s: Settings) -> None:
     from samepage.corpus import Corpus
 
@@ -104,6 +153,10 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--port", type=int, default=8080)
     p.set_defaults(fn=cmd_serve)
     sub.add_parser("arbiter", help="join Switch as the SamePage Arbiter").set_defaults(fn=cmd_arbiter)
+    p = sub.add_parser("register", help="register the arbiter with Switch (once)")
+    p.add_argument("--env-file", default=".env")
+    p.set_defaults(fn=cmd_register)
+    sub.add_parser("rooms", help="list the arbiter's rooms and their ids").set_defaults(fn=cmd_rooms)
     sub.add_parser("check-corpus", help="list sources, passages and ignored lines").set_defaults(fn=cmd_check_corpus)
     p = sub.add_parser("eval", help="score recorded agent answers and question matching")
     p.add_argument("--answers", help="answers-*.jsonl file (default: latest in reports/)")

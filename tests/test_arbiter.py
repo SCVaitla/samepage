@@ -48,7 +48,7 @@ CORPORA = {"main": build_corpus("main"), "samepage-fix": build_corpus("fix")}
 
 
 def corpus_for(ref: str) -> Corpus:
-    return CORPORA["main"] if ref == "main" else CORPORA["samepage-fix"]
+    return CORPORA["main"] if ref in ("main", "holdout/h1") else CORPORA["samepage-fix"]
 
 
 # What each fake worker cites, by topic and ref. claude reads the public docs, codex the spec.
@@ -386,5 +386,21 @@ def test_own_messages_and_other_rooms_are_ignored(tmp_path: Path) -> None:
         await sw._event(FIX, "[fix deadbeef] PR: https://github.com/acme/juniper-docs/pull/1", "samepage-fixer")
         await drain()
         assert sw.posts == []
+
+    asyncio.run(scenario())
+
+
+def test_patrol_on_a_ref_and_holdout_ask_the_right_ref(tmp_path: Path) -> None:
+    """Only checks routing (which ref and how many questions); H1's content is never asserted on."""
+    _arb, sw, _ = make(tmp_path)
+
+    async def scenario() -> None:
+        await sw.say("patrol on samepage-fix")
+        await drain()
+        assert all("[ref samepage-fix]" in c for c in sw.in_room(DESKS["samepage-claude"]))
+        await sw.say("patrol holdout")
+        await drain()
+        assert "[ref holdout/h1]" in sw.in_room(DESKS["samepage-codex"])[-1]
+        assert "6 question(s)" in next(c for c in reversed(sw.in_room(ASK)) if "holdout/h1" in c)
 
     asyncio.run(scenario())

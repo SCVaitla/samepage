@@ -36,7 +36,7 @@ from samepage.decide import Ruling, rule
 from samepage.equivalence import QuestionIndex, TfidfEmbedder
 from samepage.fixer import branch_for, diff_problems, fix_brief, pr_body
 from samepage.github import GitHub
-from samepage.golden import load_golden
+from samepage.golden import load_golden, load_holdout
 from samepage.models import AgentAnswer, CaseResult
 from samepage.parse import parse_batch, timed_out
 from samepage.patrol import PatrolItem, RetestRow, patrol_report, retest_card, retest_summary
@@ -177,7 +177,12 @@ class Arbiter:
                 investigation_card(rest, result, self.s.switch_agent_name) if result else f"No case `{rest}`."
             )
         elif verb == "patrol":
-            await self.patrol(full=rest == "full")
+            words = rest.split()
+            if "holdout" in words:
+                await self.patrol_holdout()
+            else:
+                ref = words[words.index("on") + 1] if "on" in words[:-1] else "main"
+                await self.patrol(full="full" in words, ref=ref)
         elif verb == "trust":
             await self.say(render_trust(ledger(self.store)))
         elif verb == "history" and rest:
@@ -369,8 +374,17 @@ class Arbiter:
 
     # ---- patrol, history ----------------------------------------------------------------------
 
-    async def patrol(self, full: bool = False, ref: str = "main") -> list[PatrolItem]:
-        pairs = [(cid, t) for cid, t in self.index.items] if full else list(self.canonical_text.items())
+    async def patrol_holdout(self) -> list[PatrolItem]:
+        """Ask the held-out H1 questions on branch holdout/h1 (made by `samepage holdout-branch`).
+        H1 is read from disk only here, at run time; nothing is tuned on it."""
+        h1 = load_holdout(self.s.holdout_path)
+        return await self.patrol(ref="holdout/h1", pairs=[(h1.id, q) for q in h1.questions()])
+
+    async def patrol(
+        self, full: bool = False, ref: str = "main", pairs: list[tuple[str, str]] | None = None
+    ) -> list[PatrolItem]:
+        if pairs is None:
+            pairs = [(cid, t) for cid, t in self.index.items] if full else list(self.canonical_text.items())
         pairs = list(dict.fromkeys(pairs))
         await self.say(f"Drift patrol: asking both agents {len(pairs)} question(s) on `{ref}`, sealed.")
         qids = {f"q{i + 1}": text for i, (_, text) in enumerate(pairs)}

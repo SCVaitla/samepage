@@ -86,3 +86,11 @@ The sealed design keeps the workers apart. Gate 0 still asks for both agents ans
 - Users see three or four channels instead of one. We present the desks as glass-walled offices: humans can watch every desk live, but the agents cannot see each other's.
 - Every worker runs on the owner's machine through Switch Console, so the demo machine needs Node 20+, a signed-in Claude Code, and a signed-in Codex.
 - We depend on the agent protocol revision on this server. The Slice D contract tests will be built from the recorded raw frames (U5), not from memory.
+
+## Addendum (2026-11-05)
+
+- **Verified since:** template agents accept `repo:` (Console clones it into the agent's directory), `connections:` (for example GitHub write), and `allow_existing:` (`docs/TEMPLATES.md`, "The agent block"). These drive ADR 0003.
+- **Correction:** `docs/TEMPLATES.md` says a *template* agent's `addressing` defaults to `owner`, while `addressing.py` gives newly registered agents `owner-agents`. Our template sets `owner-agents` explicitly on every agent, so the difference doesn't matter here.
+- **Rulings** gained `override <case> <file>`, and authority now includes the owners of the losing sources (ADR 0004).
+- **Smoke room:** the real template (`switch/samepage.template.yaml`) includes `samepage-smoke` for Gate 0 item 1. The Phase 0 spike files moved to `spike/`.
+- **Still open:** U1–U5. Nothing live has been run.
