@@ -397,7 +397,20 @@ def test_own_messages_and_other_rooms_are_ignored(tmp_path: Path) -> None:
         await sw._event(DESKS["samepage-claude"], "[batch deadbeef] stray", "samepage-claude")
         await sw._event(FIX, "[fix deadbeef] PR: https://github.com/acme/juniper-docs/pull/1", "samepage-fixer")
         await drain()
+        await sw._event(ASK, "just chatting about ask", "dev")
+        await drain()
         assert sw.posts == []
+
+    asyncio.run(scenario())
+
+
+def test_a_command_without_the_mention_still_works_in_the_ask_room(tmp_path: Path) -> None:
+    _arb, sw, _ = make(tmp_path)
+
+    async def scenario() -> None:
+        await sw._event(ASK, "help", "dev")
+        await drain()
+        assert "Commands:" in sw.in_room(ASK)[-1]
 
     asyncio.run(scenario())
 

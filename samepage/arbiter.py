@@ -63,6 +63,19 @@ def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+COMMANDS = ("ask", "approve", "override", "reject", "show", "patrol", "trust", "history", "help")
+
+
+def _looks_like_command(body: str) -> bool:
+    """The ask room is SamePage's own room, so `ask ...` without the @mention also counts.
+
+    Live run 2026-11-06: a typed command with no mention arrives with addressed=False.
+    Authority is checked in code (decide.can_rule), never inferred from addressing.
+    """
+    words = body.strip().split(maxsplit=1)
+    return bool(words) and words[0].lower() in COMMANDS
+
+
 def strip_mentions(body: str) -> str:
     words = body.strip().split()
     while words and words[0].startswith("@"):
@@ -145,7 +158,7 @@ class Arbiter:
         if worker is not None:
             if self._from_agent(worker, sender, sender_name, body):
                 self._on_desk_reply(worker, body)
-        elif room == self.s.ask_room and p.get("addressed"):
+        elif room == self.s.ask_room and (p.get("addressed") or _looks_like_command(body)):
             ids = [sender_name, sender]
             self._spawn(self._on_command(body, sender_name or sender or "someone", ids))
         elif room == self.s.fix_room and self.s.fix_room:
