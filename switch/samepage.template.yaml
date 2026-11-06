@@ -23,6 +23,10 @@ params:
     type: string
     label: Docs repository URL
     description: The demo docs repo the agents read and the fixer opens PRs on, e.g. https://github.com/you/juniper-desk-docs
+  docs_repo_name:
+    type: string
+    label: Docs repository (owner/name)
+    description: The same repository as owner/name, e.g. you/juniper-desk-docs. The fixer's GitHub grant reaches only this repo.
   bridge:
     type: bridge
     description: Messaging app for the rooms.
@@ -117,7 +121,7 @@ agents:
     addressing: owner-agents
     allow_existing: true
     connections:
-      - { service: github, access: write }
+      - { service: github, access: write, repos: ["{docs_repo_name}"] }
     instructions: |
       You are the SamePage fixer for a FICTIONAL company's docs repo, cloned in your working directory.
       You act only on messages from samepage-arbiter that start with `@samepage-fixer [fix <id>]`.

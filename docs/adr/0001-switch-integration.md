@@ -93,4 +93,5 @@ The sealed design keeps the workers apart. Gate 0 still asks for both agents ans
 - **Correction:** `docs/TEMPLATES.md` says a *template* agent's `addressing` defaults to `owner`, while `addressing.py` gives newly registered agents `owner-agents`. Our template sets `owner-agents` explicitly on every agent, so the difference doesn't matter here.
 - **Rulings** gained `override <case> <file>`, and authority now includes the owners of the losing sources (ADR 0004).
 - **Smoke room:** the real template (`switch/samepage.template.yaml`) includes `samepage-smoke` for Gate 0 item 1. The Phase 0 spike files moved to `spike/`.
-- **Still open:** U1–U5. Nothing live has been run.
+- **U4 partly settled offline:** Switch's own code accepts `switch/samepage.template.yaml`. `template_lint.lint_template` reports no errors or warnings. `agent_templates.agent_slots` reads 3 agent slots (the fixer with a GitHub write grant scoped to `{docs_repo_name}`). `room_document` plus `rooms_yaml.GroupTemplateDocument` read 5 rooms (3 private) and 3 links. Provisioning itself (machines, sign-ins, the existing `samepage-arbiter`) still needs the live run.
+- **Still open:** U1–U3 and U5, plus the provisioning half of U4. Nothing live has been run.

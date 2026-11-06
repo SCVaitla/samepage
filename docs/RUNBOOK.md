@@ -60,7 +60,7 @@ SAMEPAGE_DOCS_REPO_DIR=/absolute/path/to/juniper-desk-docs
 
 ## 5. Create the rooms from the template
 
-Console → **Templates → paste** `switch/samepage.template.yaml` → set **Docs repository URL** to `https://github.com/<you>/juniper-desk-docs` → **Create**.
+Console → **Templates → paste** `switch/samepage.template.yaml` → set **Docs repository URL** to `https://github.com/<you>/juniper-desk-docs` and **Docs repository (owner/name)** to `<you>/juniper-desk-docs` (the fixer's GitHub grant reaches only that repo) → **Create**.
 
 📸 `01-template-created.png`
 
