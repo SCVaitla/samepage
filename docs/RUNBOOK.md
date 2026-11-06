@@ -20,7 +20,7 @@ gh auth status     # optional, handy for creating the docs repo
 ```sh
 git clone <this repo> samepage && cd samepage
 make setup        # installs locked deps, creates .env
-make check        # lint, types, 64 tests, security; should all pass
+make check        # lint, types, tests with coverage, security; should all pass
 make seed         # shows the corpus: 12 files, owners, 1 ignored injection line
 ```
 
@@ -118,6 +118,7 @@ Expected: "Recorded…", then a brief in `samepage-fix`; the fixer opens a PR on
 |---|---|
 | `register` returns 401 | Wrong URL (the Gateway, not the bridge) or wrong key |
 | Workers never answer | The arbiter's owner differs from the workers' (bootstrap key used), or the workers' addressing isn't `owner-agents` |
-| `can't rule` | Add your Mattermost username to `SAMEPAGE_APPROVERS` |
+| `can't approve` / `Only an approver can` | Add your username (or the sender id from the arbiter's log) to `SAMEPAGE_APPROVERS`. Owners of the losing docs can only approve. |
+| Desk replies are ignored ("ignored a message in …'s room" in the log) | Switch reports agent senders differently than assumed: check `docs/evidence/phase0-raw-frames.jsonl`, or set `SAMEPAGE_STRICT_SENDER=false` |
 | "cannot check the diff" | `GITHUB_TOKEN` / `GITHUB_DEMO_REPO` not set |
 | Quotes fail verification | The engine's clone and the workers' clone are on different refs: check `SAMEPAGE_DOCS_REPO_DIR` and `git fetch` |

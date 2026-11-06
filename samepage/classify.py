@@ -3,10 +3,14 @@
 Order of checks (first match wins):
   1. An answer failed (timeout, invalid JSON)                      -> UNSUPPORTED
   2. Both agents say the docs don't answer it                      -> UNSUPPORTED
-  3. An agent answered but its headline quote did not verify       -> UNSUPPORTED
+  3. An agent's headline claim did not verify (quote not at the cited
+     lines, passage not about the question, or the quote does not state
+     the claimed value)                                              -> UNSUPPORTED
   4. One agent found an answer, the other found none               -> CONFLICT
   5. Headline values differ after normalization                    -> CONFLICT
   6. Agents agree, but another passage gives a different value     -> SOURCE_CONFLICT
+  6b. Agents agree, but the value can't be read from the quotes or
+      cross-checked against the docs (free text, no plan to scan for) -> UNSUPPORTED
   7. Agents agree; the evidence words the value in different ways  -> COMPATIBLE
   8. Agents agree; every piece of evidence words it the same way   -> VERIFIED
 

@@ -18,12 +18,13 @@ Retesting "against the PR branch" means the agents must read the docs as they ar
 ## Decision
 
 1. **Docs in a git repo.** Every worker gets the demo docs repo through `repo:`. A request carries `[ref <ref>]`, and the worker runs `git fetch origin && git checkout --detach origin/<ref>` before reading. The engine reads the same ref from its own clone with `git show origin/<ref>:<path>` (`Corpus.from_git`; refs are validated against a strict pattern). Line numbers therefore match on both sides.
-2. **Batch dispatch.** The arbiter sends each desk *one* message with up to `SAMEPAGE_BATCH_SIZE` (default 6) numbered questions. The worker replies once, with one JSON block per question. Each question is its own sealed case. A timeout or a missing block becomes UNSUPPORTED for that question only.
+2. **Batch dispatch.** The arbiter sends each desk *one* message with up to `SAMEPAGE_BATCH_SIZE` (default 6) numbered questions. The worker replies once, with one JSON block per question, starting with `[batch <id>]`. Replies without an open batch tag, or from anyone but that desk's agent, are dropped. Each question is its own sealed case. A timeout or a missing block becomes UNSUPPORTED for that question only.
 3. **Fixer agent + diff guard.** After an approve or override, the arbiter posts a fix brief in `samepage-fix`: the exact files and line spans, the current text, the approved truth, and the PR body. The fixer (Claude Code with a GitHub write connection) pushes `samepage/<case-id>` and opens the PR. The arbiter then reads the PR through the GitHub API (read-only, fine-grained token) and refuses it unless:
-   - the head branch is `samepage/<case-id>`,
+   - the head branch is `samepage/<case-id>` and the base is `main`,
    - the PR is open and unmerged,
-   - every changed line falls inside an approved span (±1 line), and every approved file was changed.
-   Only then does it retest. **No code path in SamePage merges.**
+   - every removed or replaced line is inside an approved span, every added line follows a line from just before the span through its end, added lines are capped at 3 per approved line, every approved file was changed,
+   - there are no renames, copies, mode changes, or new, deleted or binary files. Headers are only read between hunks, using the `@@` line counts.
+   Only then does it retest, and the "after" retest is pinned to the PR's head commit (`[sha …]` in the dispatch, `git checkout --detach <sha>` in the workers' instructions). The commit is stored in `fix_prs.head_sha` (migration 002). **No code path in SamePage merges.**
 4. **Retest = before and after.** The case's question plus up to `SAMEPAGE_RETEST_QUESTIONS - 1` paraphrases are asked on `main` and on the fix branch. The case is RESOLVED only when both agents give the approved truth on every question after the fix.
 
 ## Rejected

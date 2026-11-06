@@ -19,7 +19,7 @@ Each answer is a JSON block: a plain answer plus claims. A claim is *what* (enti
 
 ## 3. Checking the evidence (`samepage/evidence.py`)
 
-For every claim, SamePage opens the cited file and checks that the quote is really there, word for word, within two lines of where the agent said. If not, the claim is dropped. A made-up quote can't sneak through.
+For every claim, SamePage opens the cited file and checks three things: the quote is really there, word for word, within two lines of where the agent said; the passage it comes from is about the question (it shares a topic word with it); and the quote itself states the value the agent claims. If any check fails, the claim is dropped. A made-up quote, a real but unrelated line, or a quote that says something different can't sneak through.
 
 ## 4. Comparing values (`samepage/values.py`)
 
@@ -35,12 +35,13 @@ The rules are applied in order, and the first match wins:
 
 1. An answer failed → UNSUPPORTED
 2. Neither agent found it → UNSUPPORTED
-3. A headline quote didn't verify → UNSUPPORTED
+3. A headline claim didn't pass the three checks → UNSUPPORTED
 4. One found it, one didn't → CONFLICT
 5. The values differ → CONFLICT
 6. They agree, but another doc disagrees → SOURCE_CONFLICT
 7. They agree and the docs agree in different words → COMPATIBLE
-8. They agree and everything says it the same way → VERIFIED
+8. They agree, but SamePage can't read the value from the quotes or cross-check it (free text, no plan named) → UNSUPPORTED
+9. They agree and everything says it the same way → VERIFIED
 
 There is no AI in this step, so the same input always gives the same verdict.
 
@@ -54,7 +55,7 @@ The card shows both sealed answers, the reason, an evidence table (value, file a
 
 ## 8. The human decides (`samepage/decide.py`)
 
-`approve` accepts the proposal, `override <file>` makes that file the truth, and `reject <why>` closes it. Only approvers or the owners of the wrong docs may rule. Every decision is stored with who, when and why, in an audit log that the database refuses to change or delete (`samepage/migrations/001_init.sql`).
+`approve` accepts the proposal, `override <file>` makes that file the truth, and `reject <why>` closes it. Approvers can make any ruling; the owners of the wrong docs can only approve the proposal (they can't make their own doc the truth or bury the case). Every decision is stored with who, when and why, in an audit log that the database refuses to change or delete (`samepage/migrations/001_init.sql`).
 
 ## 9. The fix and the proof (`samepage/fixer.py`, `Arbiter.retest`)
 
@@ -66,6 +67,6 @@ The fixer agent gets a brief listing exactly which lines to change. It opens a P
 
 ## 11. How we know it works (`tests/`, `samepage/evaluate.py`)
 
-- 64 automated tests, 94% coverage, including property tests (for example, swapping the two agents never changes the verdict) and a full flow with a fake Switch room, fake agents and a fake GitHub.
+- 79 automated tests, 94% coverage, including property tests (for example, swapping the two agents never changes the verdict) and a full flow with a fake Switch room, fake agents and a fake GitHub.
 - `make eval` scores *real* recorded agent answers. Until a live patrol has been recorded, it says "not run" instead of showing numbers.
 - H1, the held-out case, is only inserted into a temporary copy (or a separate branch), and nothing was tuned on it.

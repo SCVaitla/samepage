@@ -64,13 +64,13 @@ Owners asked to rule: @marketing-lead @sales-lead
 ## Features
 
 - **Sealed second opinion:** two agents answer separately; the audit log proves the order.
-- **Evidence or it didn't happen:** every quote is checked word for word at the cited lines.
-- **Agreement isn't proof:** the engine scans all the docs, so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`.
+- **Evidence or it didn't happen:** every quote is checked word for word at the cited lines; the quoted passage must be about the question, and the quote itself must state the value claimed.
+- **Agreement isn't proof:** the engine scans the docs for every passage about the same fact (found by the question's and both agents' topic words), so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`. Agreement it cannot cross-check is `UNSUPPORTED`, never `VERIFIED`.
 - **Blast radius:** every place the wrong fact appears, and which team reads it.
-- **Owner routing:** the owners of the wrong docs are @mentioned and may rule.
+- **Owner routing:** the owners of the wrong docs are @mentioned and may approve the proposed fix (overrides and rejects need an approver).
 - **Drift patrol:** `@samepage-arbiter patrol` re-asks everything known, before a customer does.
 - **Source trust ledger:** `@samepage-arbiter trust` shows which docs keep losing rulings.
-- **Safe fix:** a PR that touches anything beyond the approved lines is refused; nothing is ever auto-merged.
+- **Safe fix:** a PR that changes anything beyond the approved lines is refused, and the checked commit is what gets retested; nothing is ever auto-merged.
 
 ## Quickstart
 
@@ -97,12 +97,12 @@ The live demo (Switch Console, Mattermost, the two agents, the docs repo) is set
 | `COMPATIBLE` | Agree, docs word it differently ("24/7" vs "round-the-clock") | Treated as agreement, no alarm |
 | `CONFLICT` | Agents disagree (or one found nothing) | Card + owners rule |
 | `SOURCE_CONFLICT` | Agents agree, but another doc says otherwise | Card + owners rule |
-| `UNSUPPORTED` | No doc covers it, a quote failed, or an answer failed | Never shown as fact |
+| `UNSUPPORTED` | No doc covers it, a quote failed, an answer failed, or the agreement can't be cross-checked | Never shown as fact |
 | `RESOLVED` | Ruled, PR open, retest passed on the fix branch | Human merges |
 
 ## Evaluation
 
-From `reports/eval-20261106T035622Z.md` (2026-11-06 03:56 UTC, commit `7ab8739`):
+From `reports/eval-20261106T041456Z.md` (2026-11-06 04:14 UTC, commit `0793d1a`):
 
 | Metric | Result | Target |
 |---|---|---|
@@ -126,8 +126,9 @@ Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
 - **Docs are data:** lines that read like instructions to AI are excluded from facts and shown as ignored; a test proves an injected line changes no outcome.
 - **Least privilege:** the engine's GitHub token is fine-grained, one repo, read-only. The fixer writes through the deployer's Switch GitHub connection. `main` is branch-protected, and SamePage has no merge call.
-- **Diff guard:** a PR is refused if it touches anything outside the approved lines, isn't on `samepage/<case>`, or isn't open.
-- **Authority in code:** only approvers and owners of the losing docs can rule.
+- **Diff guard:** a PR is refused unless it targets `main` from `samepage/<case>`, is open, changes only lines inside the approved passages (with a cap on added lines), and has no renames, mode changes, or new, deleted or binary files. The retest runs at the exact commit that was checked.
+- **Authority in code:** approvers can make any ruling; owners of the losing docs can only approve the proposal. Approvers can be configured by the sender's unique id.
+- **Sealing in code:** a desk reply counts only if it comes from that desk's agent and names a batch that is still open; stale, untagged or echoed messages are dropped.
 - **Untrusted input:** agent replies are size-capped and schema-validated, never executed. Git refs are validated. The audit log is append-only, enforced by database triggers.
 - Secrets only via `.env` (gitignored); gitleaks runs in CI and pre-commit; `bandit` and `pip-audit` report no findings.
 
@@ -138,7 +139,13 @@ Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 - **Lexical question matching:** "Does Juniper Desk support HIPAA?" maps to the support-hours question (the one miss in 30), and "Is there phone support?" scores 0.72 against support hours. A sentence-embedding backend can be plugged in (`Embedder` protocol).
 - **Value types are limited** to durations, seats, rates, 24/7 schedules, yes/no and plan availability. Other values are compared as text and not cross-checked across the docs.
 - **The 90-second answer target** depends on agent speed; the default timeout is 240 s.
+- **Conservative by design:** answers whose value is free text, or a yes/no with no plan named, end `UNSUPPORTED` even when the agents are right, because the engine can't cross-check them.
+- **The glossary and normalizer were written alongside the demo corpus.** The rules are generic, but the glossary groups cover the planted topics; a real deployment has to keep `corpus/glossary.yaml` up to date. Nothing was tuned on H1.
+- **Sender check assumption:** desk replies are accepted only when Switch reports the agent's name or id as the sender. This is unverified until the live run (U5; `SAMEPAGE_STRICT_SENDER=false` relaxes it).
+- Pending fix briefs are kept in memory, so restarting the arbiter mid-fix means re-approving.
+- The HTTP API has no login; Docker binds it to localhost only.
 - `make up` is untested here: Docker wasn't available in the build environment.
+- An independent QA/Security review found 6 high and 5 medium issues; all are fixed and tested (see [docs/REVIEW.md](docs/REVIEW.md)).
 
 ## What we'd build next
 
