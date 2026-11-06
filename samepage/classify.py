@@ -47,8 +47,20 @@ GENERIC_TOKENS = frozenset(
         "detail",
         "info",
         "product",
+        "include",
+        "offer",
+        "allow",
+        "able",
+        "use",
+        "turn",
+        "get",
+        "customer",
+        "team",
     }
 )
+# Words about the *size* of a value, not the fact: "how many days", "how long". Never anchors.
+_SIZE = ("day", "week", "month", "year", "hour", "minute", "second", "time")
+UNIT_WORDS = frozenset({*_SIZE, *(w + "s" for w in _SIZE), "long", "many", "much", "number", "most", "max", "maximum"})
 SCANNABLE_KINDS = frozenset({"days", "seats", "per_min", "schedule", "bool"})
 
 
@@ -76,15 +88,19 @@ class Engine:
                 return plan
         return None
 
-    def fact_for(self, claim: ContractClaim, question: str, kind: str) -> Fact:
-        plan = self.plan_named(claim.entity, claim.attribute, claim.qualifier) or self.plan_named(question)
-        drop = GENERIC_TOKENS | set(self.corpus.plans)
-        anchors: set[str] = set()
-        for source in (claim.entity, claim.attribute, question):
-            anchors = self.corpus.glossary.token_set([source]) - drop
-            if anchors:
-                break
-        return Fact(kind=kind, plan=plan, anchors=frozenset(anchors))
+    def anchors(self, *texts: str) -> frozenset[str]:
+        """Topic words: glossary tokens minus generic words, plan names and size words."""
+        drop = GENERIC_TOKENS | UNIT_WORDS | set(self.corpus.plans)
+        return frozenset(self.corpus.glossary.token_set(texts) - drop)
+
+    def fact_for(self, claims: list[ContractClaim], question: str, kind: str) -> Fact:
+        """The fact to scan for. Anchor words come from the question AND every agent's claim,
+        so no single agent's choice of names decides which docs get checked."""
+        parts = [question, *(c.entity for c in claims), *(c.attribute for c in claims)]
+        plan = self.plan_named(question) or next(
+            (p for c in claims if (p := self.plan_named(c.entity, c.attribute, c.qualifier))), None
+        )
+        return Fact(kind=kind, plan=plan, anchors=self.anchors(*parts))
 
     def value_of(self, claim: ContractClaim, question: str) -> Value:
         plan = self.plan_named(claim.entity, claim.attribute, claim.qualifier) or self.plan_named(question)
@@ -153,22 +169,48 @@ class Engine:
     # ---- the decision ----------------------------------------------------------
 
     def check(self, answer: AgentAnswer, question: str) -> list[CheckedClaim]:
+        """Verify each claim: the quote exists at the cited lines, the quoted passage is about
+        the question, and the quote itself states the claimed value."""
         if answer.contract is None or answer.contract.unknown:
             return []
+        topic = self.anchors(question)
         checked = []
         for claim in answer.contract.claims:
             result = verify_quote(self.corpus, claim, self.slack)
             value = self.value_of(claim, question)
+            ok, reason, confirmed = result.ok, result.reason, False
+            if ok and topic and not (topic & self._context_tokens(result.path, result.line_start, result.line_end)):
+                ok, reason = False, "the quoted passage is not about the question"
+            plan = self.plan_named(claim.entity, claim.attribute, claim.qualifier) or self.plan_named(question)
+            readable = value.kind in SCANNABLE_KINDS and not (value.kind == "bool" and plan is None)
+            if ok and readable:
+                stated = extract_for(value.kind, claim.quote, plan, self.corpus.plans)
+                if stated is None or stated.key != value.key:
+                    said = stated.key if stated else "no such value"
+                    ok, reason = False, f"the quote does not state the claimed value ({value.key}; quote: {said})"
+                else:
+                    confirmed = True
             checked.append(
                 CheckedClaim(
                     agent=answer.agent,
                     claim=claim,
-                    verified=result.ok,
-                    reason=result.reason,
+                    verified=ok,
+                    reason=reason,
                     value_key=value.key,
+                    value_confirmed=confirmed,
                 )
             )
         return checked
+
+    def _context_tokens(self, path: str, start: int, end: int) -> set[str]:
+        """Words of the passages around a verified quote (including their headings)."""
+        parts = [
+            p.heading + " " + p.text
+            for p in self.corpus.passages
+            if p.path == path and p.line_start <= end and start <= p.line_end
+        ]
+        parts.append(" ".join(self.corpus.files[path][start - 1 : end]))
+        return self.corpus.glossary.token_set(parts)
 
     def evaluate(self, question: str, answers: list[AgentAnswer]) -> CaseResult:
         answers = sorted(answers, key=lambda a: a.agent)  # order-independent by construction
@@ -188,6 +230,9 @@ class Engine:
                 answers=plain,
                 injections=list(self.corpus.injections),
             )
+
+        if len(answers) < 2:
+            return done(Outcome.UNSUPPORTED, ["SamePage needs two independent answers to compare."], [])
 
         failed = [a for a in answers if a.contract is None]
         if failed:
@@ -215,9 +260,10 @@ class Engine:
             headlines[a.agent] = head
 
         agent_evidence = [self._headline_evidence(h, question) for h in headlines.values()]
-        first = next(iter(headlines.values()))
         kinds = {h.value_key.split(":", 1)[0] for h in headlines.values()}
-        fact = self.fact_for(first.claim, question, kinds.pop() if len(kinds) == 1 else "mixed")
+        fact = self.fact_for(
+            [h.claim for h in headlines.values()], question, kinds.pop() if len(kinds) == 1 else "mixed"
+        )
         scanned = _dedupe(self.scan(fact), agent_evidence)
         evidence = agent_evidence + scanned
 
@@ -238,11 +284,20 @@ class Engine:
             reasons.append(f"Both agents agree on {agreed}, but other docs say otherwise ({where}).")
             return done(Outcome.SOURCE_CONFLICT, reasons, evidence)
 
-        if fact.kind not in SCANNABLE_KINDS:
+        # Agreement only counts when SamePage could check the value against the quote AND
+        # cross-check the rest of the docs. Otherwise it is not presented as fact.
+        unchecked = (
+            fact.kind not in SCANNABLE_KINDS
+            or (fact.kind == "bool" and fact.plan is None)
+            or not fact.anchors
+            or not all(h.value_confirmed for h in headlines.values())
+        )
+        if unchecked:
             reasons.append(
-                "The agents agree. The engine cannot scan the docs for this kind of value, "
-                "so other sources were not cross-checked."
+                "The agents agree, but SamePage cannot check this kind of answer against the docs "
+                "(the value is free text, or no plan or topic to scan for). Treat it as unverified."
             )
+            return done(Outcome.UNSUPPORTED, reasons, evidence)
         # Yes/no facts have no wording to compare; for the rest, compare how each source wrote the value.
         wordings = {_wording(e.value_text) for e in evidence} if fact.kind != "bool" else set()
         if len(wordings) > 1:

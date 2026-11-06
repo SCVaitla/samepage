@@ -102,6 +102,7 @@ class CheckedClaim(BaseModel):
     verified: bool
     reason: str = ""
     value_key: str = ""
+    value_confirmed: bool = False  # the quote itself states this value (only for value kinds we can read)
 
 
 class Proposal(BaseModel):

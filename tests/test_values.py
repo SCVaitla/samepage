@@ -78,3 +78,17 @@ def test_number_formats_agree(n: int) -> None:
     a = find_rates(f"{n} requests per minute")[0].key
     b = find_rates(f"{n:,} requests/min")[0].key
     assert a == b == f"per_min:{n}"
+
+
+def test_review_normalizer_cases() -> None:
+    """Review M4: negation after the plan, number words, months vs years."""
+    assert plan_availability("Starter and Pro plans do not include SSO.", PLANS) == {"enterprise"}
+    assert plan_availability("Starter teams cannot use SSO.", PLANS) == {"pro", "enterprise"}
+    assert plan_availability("available only on Enterprise, not on Starter.", PLANS) == {"enterprise"}
+    assert plan_availability("Everything in Starter, plus the REST API.", PLANS) is None
+    assert normalize_claim_value("Starter: no", "", "available", "starter", PLANS).key == "bool:false"
+    assert keys(find_days("forty-five days")) == ["days:45"]
+    assert keys(find_days("three hundred sixty-five days")) == ["days:365"]
+    assert keys(find_days("12 months")) == keys(find_days("one year")) == ["days:365"]
+    assert keys(find_days("6 months")) == ["days:180"]
+    assert find_days("often 3 days")[0].key == "days:3"  # "ten" inside "often" is not a number

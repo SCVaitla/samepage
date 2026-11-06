@@ -16,28 +16,33 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-NUMBER_WORDS = {
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
+UNITS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9}
+TEENS = {
     "ten": 10,
     "eleven": 11,
     "twelve": 12,
+    "thirteen": 13,
     "fourteen": 14,
     "fifteen": 15,
-    "twenty": 20,
-    "thirty": 30,
-    "sixty": 60,
-    "ninety": 90,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
 }
+TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+
+
+def _alt(words: dict[str, int]) -> str:
+    return "|".join(sorted(words, key=len, reverse=True))
+
+
+# Any English number word up to 999: "five", "fourteen", "forty-five", "three hundred sixty-five".
+WORD_NUMBER = (
+    rf"(?:(?:{_alt(UNITS)})\s+hundred(?:\s+(?:and\s+)?)?)?"
+    rf"(?:(?:{_alt(TENS)})(?:[\s-](?:{_alt(UNITS)}))?|{_alt(TEENS)}|{_alt(UNITS)})\b"
+)
 NUM = r"(?<![$\w.,])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*(k)?(?![\w])"
-NUM_OR_WORD = r"(?<![$\w.,])(\d{1,3}(?:,\d{3})+|\d+|" + "|".join(sorted(NUMBER_WORDS, key=len, reverse=True)) + r")"
+NUM_OR_WORD = rf"(?<![$\w.,])(\d{{1,3}}(?:,\d{{3}})+|\d+|{WORD_NUMBER})"
 
 DAYS = re.compile(NUM_OR_WORD + r"[\s-]+(day|days|week|weeks|month|months|year|years)\b", re.IGNORECASE)
 SEATS = re.compile(NUM_OR_WORD + r"\s+(seats?|members?|users?|people|teammates)\b", re.IGNORECASE)
@@ -50,7 +55,10 @@ SCHEDULE_247 = re.compile(
     re.IGNORECASE,
 )
 UNIVERSAL_PLANS = re.compile(r"\b(all|every|any|each|whatever)\s+(of our\s+)?plans?\b", re.IGNORECASE)
-NEGATION = re.compile(r"\b(not|no|isn't|aren't|unavailable|excluding|except|without|never)\b", re.IGNORECASE)
+NEGATION = re.compile(
+    r"\b(not|no|isn't|aren't|cannot|can't|don't|doesn't|won't|unavailable|excluding|except|without|never)\b",
+    re.IGNORECASE,
+)
 ONLY = re.compile(r"\b(only|exclusive(ly)?|just)\b", re.IGNORECASE)
 TRUE_WORDS = {"true", "yes", "available", "included", "supported", "enabled", "allowed", "y"}
 FALSE_WORDS = {
@@ -79,9 +87,22 @@ class Value:
         return self.key.split(":", 1)[0]
 
 
+def words_to_number(text: str) -> int:
+    """'forty-five' -> 45, 'three hundred sixty-five' -> 365."""
+    total = 0
+    for word in re.split(r"[\s-]+", text.lower()):
+        if word in ("and", ""):
+            continue
+        if word == "hundred":
+            total *= 100
+        else:
+            total += UNITS.get(word) or TEENS.get(word) or TENS.get(word) or 0
+    return total
+
+
 def _number(raw: str, k: str | None = None) -> float:
-    raw = raw.lower()
-    value = float(NUMBER_WORDS[raw]) if raw in NUMBER_WORDS else float(raw.replace(",", ""))
+    raw = raw.strip().lower()
+    value = float(raw.replace(",", "")) if raw[0].isdigit() else float(words_to_number(raw))
     return value * 1000 if k else value
 
 
@@ -93,7 +114,10 @@ def find_days(text: str) -> list[Value]:
     out = []
     for m in DAYS.finditer(text):
         unit = m.group(2).lower().rstrip("s")
-        out.append(Value(f"days:{_fmt(_number(m.group(1)) * UNIT_DAYS[unit])}", m.group(0), m.start()))
+        n = _number(m.group(1))
+        # Whole years of months count as years ("12 months" == "one year" == 365 days).
+        days = n / 12 * 365 if unit == "month" and n % 12 == 0 else n * UNIT_DAYS[unit]
+        out.append(Value(f"days:{_fmt(days)}", m.group(0), m.start()))
     return out
 
 
@@ -121,8 +145,10 @@ def find_schedules(text: str) -> list[Value]:
 def plan_availability(text: str, plans: list[str]) -> set[str] | None:
     """Which plans a passage says something is available on, or None if it doesn't say.
 
-    Clause by clause: a plan named after a negation is excluded, "only/exclusive" makes
-    the named plans the whole set, and "all/every plan" means every plan.
+    Clause by clause: a plan is excluded when a negation comes before it in the clause
+    ("not available on Starter") or right after it, before any comma ("Starter and Pro
+    plans do not include it"); "only/exclusive" makes the named plans the whole set;
+    "all/every plan" means every plan. Questions are skipped: they assert nothing.
     """
     if not plans:
         return None
@@ -130,6 +156,8 @@ def plan_availability(text: str, plans: list[str]) -> set[str] | None:
     excluded: set[str] = set()
     universal = False
     restrictive = False
+    # "Everything in Starter" on a pricing page points at another plan's features; it says nothing here.
+    text = re.sub(r"\b(everything|all features) (in|of|from) (the )?\w+( plan)?", " ", text, flags=re.IGNORECASE)
     for clause in re.split(r"(?<=[.;!?\n])", text):
         if clause.strip().rstrip("*_ ").endswith("?"):
             continue  # a question asserts nothing ("Can a Starter customer use SSO?")
@@ -139,7 +167,8 @@ def plan_availability(text: str, plans: list[str]) -> set[str] | None:
         for plan in plans:
             for m in re.finditer(r"\b" + re.escape(plan) + r"\b", lowered):
                 before = lowered[max(0, m.start() - 60) : m.start()]
-                if NEGATION.search(before):
+                after = lowered[m.end() :].split(",", 1)[0]
+                if NEGATION.search(before) or NEGATION.search(after):
                     excluded.add(plan)
                 else:
                     included.add(plan)
@@ -195,6 +224,10 @@ def normalize_claim_value(value: str, quote: str, attribute: str, plan: str | No
             for v in finder(quote):
                 if v.key.endswith(":" + _fmt(number)):
                     return Value(v.key, value, 0)
+        # The quote states one kind of value ("limited to 5 seats"): the bare number is of that kind.
+        quote_kinds = {v.kind for f in (find_rates, find_days, find_seats) for v in f(quote)}
+        if len(quote_kinds) == 1:
+            return Value(f"{quote_kinds.pop()}:{_fmt(number)}", value, 0)
         hints = {
             "seat": "seats",
             "member": "seats",

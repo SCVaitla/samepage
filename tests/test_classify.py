@@ -33,24 +33,85 @@ def test_answer_with_no_claims_counts_as_unknown() -> None:
     assert result.outcome is Outcome.UNSUPPORTED
 
 
-def test_verified_when_agents_and_docs_agree_in_the_same_words() -> None:
+def test_verified_when_agents_agree_and_no_doc_disagrees() -> None:
+    """VERIFIED needs a value SamePage can read and cross-check. On the fixed docs (as on a fix
+    branch) every passage about SSO on Starter says no."""
+    from tests.test_arbiter import build_corpus
+
+    fixed = build_corpus("fix")
+    q = "Does the Starter plan include single sign-on?"
+    quote = "Single sign-on (SSO) through SAML 2.0 is an Enterprise plan feature"
+    a = answer("claude", claim("product_spec.md", quote, "false", "sso", "available", "starter", c=fixed))
+    b = answer(
+        "codex",
+        claim(
+            "website/faq.md",
+            "Single sign-on is available on the Enterprise plan only",
+            "no",
+            "sso",
+            "available",
+            "starter",
+            c=fixed,
+        ),
+    )
+    result = Engine(fixed).evaluate(q, [a, b])
+    assert result.outcome is Outcome.VERIFIED, result.reasons
+
+
+def test_agreement_that_cannot_be_cross_checked_is_never_verified() -> None:
+    """Review H2: a yes/no with no plan, free text, or a bare number can't be checked against the docs."""
     q = "Is phone support offered?"
     a = answer("claude", claim("product_spec.md", "Phone support is not offered on any plan", "no", "phone", "offered"))
-    b = answer("codex", claim("product_spec.md", "Phone support is not offered on any plan", "no", "phone", "offered"))
-    result = Engine(corpus()).evaluate(q, [a, b])
-    assert result.outcome is Outcome.VERIFIED
-    assert "cannot scan" not in " ".join(result.reasons) or result.outcome is Outcome.VERIFIED
+    result = Engine(corpus()).evaluate(q, [a, a.model_copy(update={"agent": "codex"})])
+    assert result.outcome is Outcome.UNSUPPORTED
+    assert "cannot check" in result.reasons[-1]
+    q2 = "Which plans include single sign-on?"
+    b = answer(
+        "claude", claim("website/faq.md", "Single sign-on is included on all plans", "All plans", "sso", "plans")
+    )
+    result = Engine(corpus()).evaluate(q2, [b, b.model_copy(update={"agent": "codex"})])
+    assert result.outcome is Outcome.UNSUPPORTED
 
 
-def test_unscannable_agreement_says_it_was_not_cross_checked() -> None:
-    q = "What colour is the logo?"
+def test_real_but_irrelevant_quote_is_not_evidence() -> None:
+    """Review H1-A: a real line that isn't about the question can't support an answer."""
+    q = "Does Juniper Desk support HIPAA?"
     a = answer(
         "claude",
-        claim("product_spec.md", "Juniper Desk is a task and project management tool", "green", "logo", "colour"),
+        claim("product_spec.md", "Juniper Desk is a task and project management tool", "yes", "hipaa", "compliant"),
     )
     result = Engine(corpus()).evaluate(q, [a, a.model_copy(update={"agent": "codex"})])
-    assert result.outcome is Outcome.VERIFIED
-    assert any("cannot scan" in r for r in result.reasons)
+    assert result.outcome is Outcome.UNSUPPORTED
+    assert "not about the question" in result.reasons[0]
+
+
+def test_quote_that_contradicts_the_claimed_value_is_not_evidence() -> None:
+    """Review H1-B/C: the quote must state the value the agent claims."""
+    sso_q = "Does the Starter plan include single sign-on?"
+    quote = "Single sign-on (SSO) through SAML 2.0 is an Enterprise plan feature"
+    a = answer("claude", claim("product_spec.md", quote, "yes", "zzz", "available", "starter"))
+    r = Engine(corpus()).evaluate(sso_q, [a, a.model_copy(update={"agent": "codex"})])
+    assert r.outcome is Outcome.UNSUPPORTED and "does not state the claimed value" in r.reasons[0]
+    b = answer("claude", claim("product_spec.md", "Starter workspaces are limited to 5 seats", "10", "seats", "limit"))
+    r = Engine(corpus()).evaluate(Q, [b, b.model_copy(update={"agent": "codex"})])
+    assert r.outcome is Outcome.UNSUPPORTED and "seats:10" in r.reasons[0]
+
+
+def test_scan_does_not_depend_on_one_agents_entity_name() -> None:
+    """Review H3: whatever the agents call the fact, the question's words still find the spec."""
+    for entity in ("team_capacity", "seat_limit", "x"):
+        a = answer(
+            "claude", claim("website/pricing.md", "Up to 10 seats per workspace", "10", entity, "limit", "starter")
+        )
+        b = answer(
+            "codex", claim("website/faq.md", "A Starter workspace can have up to 10 seats", "10", entity, "limit")
+        )
+        assert Engine(corpus()).evaluate(Q, [a, b]).outcome is Outcome.SOURCE_CONFLICT, entity
+
+
+def test_a_single_answer_is_never_enough() -> None:
+    a = answer("claude", claim("product_spec.md", "Starter workspaces are limited to 5 seats", "5", "seats", "limit"))
+    assert Engine(corpus()).evaluate(Q, [a]).outcome is Outcome.UNSUPPORTED
 
 
 SEAT_CLAIMS = [

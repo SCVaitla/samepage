@@ -91,7 +91,7 @@ class Glossary:
         pairs.sort(key=lambda p: len(p[0]), reverse=True)  # longest phrase first
         self._pairs = pairs
         self._patterns = [
-            (re.compile(r"(?<![a-z0-9])" + re.escape(phrase) + r"(?![a-z0-9])"), f" g:{name} ")
+            (re.compile(r"(?<![a-z0-9:])" + re.escape(phrase) + r"(?![a-z0-9])"), f" g:{name} ")
             for phrase, name in pairs
         ]
 
