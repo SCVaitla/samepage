@@ -1,0 +1,24 @@
+# `make up` starts the engine API. The arbiter joins Switch from your machine (`make arbiter`)
+# because Switch Console runs the agents and the local server there.
+services:
+  engine:
+    build: .
+    ports: ["8080:8080"]
+    env_file:
+      - path: .env
+        required: false
+    volumes: ["samepage-data:/data"]
+    restart: unless-stopped
+
+  arbiter:
+    build: .
+    command: ["samepage", "arbiter"]
+    env_file: [.env]
+    # Switch runs on the host; reach it at host.docker.internal (set SWITCH_API_URL accordingly).
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes: ["samepage-data:/data"]
+    profiles: ["arbiter"]
+    restart: unless-stopped
+
+volumes:
+  samepage-data:
