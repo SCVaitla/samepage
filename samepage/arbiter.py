@@ -353,7 +353,7 @@ class Arbiter:
         body = pr_body(case_id, row["question"], ruling, user)
         await self.t.post(self.s.fix_room, f"{brief}\n\nPR body:\n\n{body}")
         self.store.audit(case_id, "fix_requested", {"branch": branch_for(case_id), "edits": len(ruling.edits)})
-        await self.say(f"Asked @{self.s.fixer_name} to open a PR on `{branch_for(case_id)}`.")
+        await self.say(f"Asked {self.s.fixer_name} (in the fix room) to open a PR on `{branch_for(case_id)}`.")
 
     async def _on_fix_reply(self, case_id: str, url: str) -> None:
         ruling = self.pending_fixes.pop(case_id, None)  # taken at once: a duplicate reply finds nothing
@@ -410,6 +410,7 @@ class Arbiter:
             engine = self.engine(pinned or at)
             for q, text in qids.items():
                 rows[q][label] = engine.evaluate(text, list(answers[q].values()))
+                self.store.save_result(cases[q], rows[q][label])  # sub-cases don't stay OPEN
         table = [RetestRow(qids[q], rows[q]["before"], rows[q]["after"]) for q in qids]
         summary = retest_summary(table, ruling.truth_value)
         self.store.save_retest(case_id, ref, summary)

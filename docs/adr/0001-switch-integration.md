@@ -1,6 +1,6 @@
 # ADR 0001: How SamePage plugs into Switch
 
-- **Status:** Proposed. Design verified from Switch source and docs; live run pending (see "Gate 0" below).
+- **Status:** Accepted after the live run on 2026-11-06 (see the last section).
 - **Date:** 2026-11-03
 - **Roles:** Agent Engineer (author), Architect, Security Engineer
 - **Switch version read:** `sandbox-quantum/switch` at commit `7e1316f767ee341ea4b91d7720330907c42a65b6` (2026-11-04 03:24 UTC)
@@ -95,3 +95,19 @@ The sealed design keeps the workers apart. Gate 0 still asks for both agents ans
 - **Smoke room:** the real template (`switch/samepage.template.yaml`) includes `samepage-smoke` for Gate 0 item 1. The Phase 0 spike files moved to `spike/`.
 - **U4 partly settled offline:** Switch's own code accepts `switch/samepage.template.yaml`. `template_lint.lint_template` reports no errors or warnings. `agent_templates.agent_slots` reads 3 agent slots (the fixer with a GitHub write grant scoped to `{docs_repo_name}`). `room_document` plus `rooms_yaml.GroupTemplateDocument` read 5 rooms (3 private) and 3 links. Provisioning itself (machines, sign-ins, the existing `samepage-arbiter`) still needs the live run.
 - **Still open:** U1–U3 and U5, plus the provisioning half of U4. Nothing live has been run.
+
+## Live run (2026-11-06, Switch Console 0.40.1, server 0.31.0, agent protocol 9)
+
+Status changes to **Accepted**. On the human's Mac, with real Claude Code and Codex sessions run by Console:
+
+| # | Result | Evidence |
+|---|---|---|
+| U1 | **Yes.** The `always_on` arbiter posts with `POST /agents/{id}/message` while its stream is open. | Cards in samepage-ask; `docs/evidence/live-c1-*.png` |
+| U2 | **Yes.** `@samepage-claude [batch …]` posted by the arbiter wakes the Console-run session in that desk ("Starting a session…", then the answer). | `reports/frames.jsonl` on the demo machine; `tests/fixtures/live/` |
+| U3 | **Yes**, both workers replied with `[batch <id>]` and a JSON block that parsed first time. Claude Code adds supporting claims, including the conflicting FAQ lines; Codex gives one claim. | `tests/fixtures/live/c1-sso-2026-11-06.jsonl` |
+| U4 | **Yes**, with one change: Console's GitHub connector needs the server to have an https address, so the fixer uses the local `gh` sign-in instead (template `connections:` removed). The existing `samepage-arbiter` was accepted in all four rooms. | `docs/evidence/gate0-smoke-both-workers.png` |
+| U5 | Message frames match `MessagePayload`. A human is `sender_name: "user"`, sender `@switch-mattermost-…`; an agent is `sender_name: "<agent name>"`, sender `@switch-agent-…:localhost`. `sender_kind` was null on this version. A command typed **without** the @mention arrives with `addressed: false`, so the ask room now accepts a leading command word too. | Raw frames; `test_live_replies.py` |
+
+Two engine bugs found by real answers and fixed with the real replies as a test: a quote wrapped across lines ("not available⏎on the Starter …") was read as two clauses, and "not available (Enterprise only)" was read as yes.
+
+Full live loop on C1: ask → sealed answers → SOURCE_CONFLICT (agents agree, website and sales FAQs disagree) → `approve` → fixer opened https://github.com/SCVaitla/juniper-desk-docs/pull/1 (2 files, 4 lines each way, diff guard passed) → retest 0/4 → 4/4 → RESOLVED.
