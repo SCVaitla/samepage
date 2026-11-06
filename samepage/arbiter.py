@@ -495,5 +495,23 @@ async def run(settings: Settings) -> None:
     arbiter = Arbiter(settings, client, Store(settings.db_path), github=gh)
     rooms = [settings.ask_room, *arbiter.desks.values(), *([settings.fix_room] if settings.fix_room else [])]
     log.info("arbiter listening on %d rooms", len(rooms))
+    frames = settings.reports_dir / "frames.jsonl"  # raw frames, the evidence for ADR 0001 U5
+    frames.parent.mkdir(parents=True, exist_ok=True)
     async for event in client.events(rooms):
+        with frames.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(event) + "\n")
+        log.info("event %s", describe(event, settings, arbiter.desks))
         await arbiter.on_event(event)
+
+
+def describe(event: dict[str, Any], s: Settings, desks: dict[str, str]) -> str:
+    """One readable log line per frame, so a live run shows what Switch delivered."""
+    if "connection_id" in event:
+        return f"connection_state rooms={len(event.get('rooms') or [])} scope={event.get('scope')}"
+    room = str(event.get("room_id") or "")
+    names = {s.ask_room: "ask", s.fix_room: "fix", **{r: f"desk:{w}" for w, r in desks.items()}}
+    p = event.get("payload") or {}
+    return (
+        f"{event.get('type')} room={names.get(room, room)} addressed={p.get('addressed')} "
+        f"from={p.get('sender_name')!r}/{p.get('sender_kind')} body={str(p.get('body') or '')[:60]!r}"
+    )

@@ -173,6 +173,7 @@ def cmd_holdout_branch(args: argparse.Namespace, _: Settings) -> None:
 
 def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.INFO, format='{"level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}')
+    logging.getLogger("httpx").setLevel(logging.WARNING)  # one line per heartbeat drowns everything else
     parser = argparse.ArgumentParser(prog="samepage", description=__doc__)
     sub = parser.add_subparsers(required=True)
     p = sub.add_parser("serve", help="run the HTTP API (/healthz, /v1/evaluate)")
