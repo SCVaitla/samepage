@@ -104,3 +104,18 @@ def test_index_threshold_and_paraphrase_lookup() -> None:
         "How many days do customers have to request a refund?",
         "What is the refund window?",
     ]
+
+
+def test_retest_counts_only_clean_outcomes() -> None:
+    """Review H6: both agents on the truth is not enough if the docs still disagree."""
+    from samepage.classify import Engine
+    from samepage.patrol import consistent
+    from tests.helpers import answer, claim
+
+    quote = "Single sign-on (SSO) through SAML 2.0 is an Enterprise plan feature"
+    a = answer("claude", claim("product_spec.md", quote, "false", "sso", "available", "starter"))
+    result = Engine(corpus()).evaluate(
+        "Does the Starter plan include single sign-on?", [a, a.model_copy(update={"agent": "codex"})]
+    )
+    assert result.outcome.value == "SOURCE_CONFLICT"  # website + sales FAQ still say yes
+    assert not consistent(result, "bool:false")

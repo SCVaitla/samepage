@@ -36,10 +36,18 @@ class Ruling:
     edits: tuple[Edit, ...] = ()
 
 
-def can_rule(user: str, result: CaseResult, approvers: set[str]) -> bool:
-    who = user.strip().lstrip("@").lower()
+def can_rule(identities: list[str], result: CaseResult, approvers: set[str], verb: str = "approve") -> bool:
+    """Approvers may make any ruling. An owner of a LOSING source may only approve the
+    proposal: they cannot override (make their own doc the truth) or reject (bury the case).
+
+    `identities` are every name the platform gives the sender (unique id and username), so
+    approvers can be configured by the id, which users cannot change.
+    """
+    ids = {i.strip().lstrip("@").lower() for i in identities if i and i.strip()}
+    if ids & approvers:
+        return True
     owners = {o.lstrip("@").lower() for o in owners_to_notify(result)}
-    return bool(who) and (who in approvers or who in owners)
+    return verb == "approve" and bool(ids & owners)
 
 
 def _edits(losing: list[Evidence]) -> tuple[Edit, ...]:
@@ -52,16 +60,25 @@ def _edits(losing: list[Evidence]) -> tuple[Edit, ...]:
     return tuple(out)
 
 
-def rule(store: Store, case_id: str, user: str, verb: str, arg: str, approvers: set[str]) -> Ruling:
+def rule(
+    store: Store,
+    case_id: str,
+    user: str,
+    verb: str,
+    arg: str,
+    approvers: set[str],
+    identities: list[str] | None = None,
+) -> Ruling:
     row = store.case(case_id)
     result = store.result(case_id)
     if row is None or result is None:
         return Ruling(False, f"No case `{case_id}`.")
     if row["state"] not in OPEN_FOR_RULING:
         return Ruling(False, f"Case `{case_id}` is {row['state']}; there is nothing to rule on.")
-    if not can_rule(user, result, approvers):
+    if not can_rule(identities or [user], result, approvers, verb):
         owners = " ".join(owners_to_notify(result)) or "the configured approvers"
-        return Ruling(False, f"{user} can't rule on `{case_id}`. Ask {owners}, or add them to SAMEPAGE_APPROVERS.")
+        who = f"Ask {owners} (approve only) or an approver" if verb == "approve" else "Only an approver can"
+        return Ruling(False, f"{user} can't {verb} `{case_id}`. {who}; approvers are set in SAMEPAGE_APPROVERS.")
     if result.proposal is None:  # alarms always carry a proposal
         return Ruling(False, f"Case `{case_id}` has no proposal to rule on.")
 

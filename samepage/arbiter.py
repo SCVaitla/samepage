@@ -74,6 +74,7 @@ def strip_mentions(body: str) -> str:
 class Batch:
     batch_id: str
     ref: str
+    sha: str | None
     questions: dict[str, str]  # question id -> text
     case_ids: dict[str, str]  # question id -> case id
     futures: dict[str, asyncio.Future[str]] = field(default_factory=dict)  # worker -> raw reply
@@ -92,6 +93,8 @@ class Arbiter:
         self.t = transport
         self.store = store
         self.desks = settings.desk_map()
+        if len(self.desks) < 2:
+            raise ValueError("SamePage needs at least two desks (SAMEPAGE_DESKS): one answer is not a second opinion.")
         self.github = github
         self.corpus_for = corpus_for or self._load_corpus
         self.batches: dict[str, Batch] = {}
@@ -121,7 +124,8 @@ class Arbiter:
             capture_output=True,
             timeout=60,
         )
-        return Corpus.from_git(repo, f"origin/{ref}", self.s.docs_subdir)
+        target = ref if re.fullmatch(r"[0-9a-f]{40}", ref) else f"origin/{ref}"
+        return Corpus.from_git(repo, target, self.s.docs_subdir)
 
     def engine(self, ref: str) -> Engine:
         return Engine(self.corpus_for(ref), self.s.quote_slack_lines, self.s.min_anchor_terms)
@@ -136,15 +140,29 @@ class Arbiter:
         if body.startswith(MARKER) or p.get("sender_name") == self.s.switch_agent_name:
             return
         room = event.get("room_id")
+        sender, sender_name = str(p.get("sender") or ""), str(p.get("sender_name") or "")
         worker = next((w for w, r in self.desks.items() if r == room), None)
         if worker is not None:
-            self._on_desk_reply(worker, body)
+            if self._from_agent(worker, sender, sender_name, body):
+                self._on_desk_reply(worker, body)
         elif room == self.s.ask_room and p.get("addressed"):
-            self._spawn(self._on_command(body, str(p.get("sender_name") or p.get("sender") or "someone")))
+            ids = [sender_name, sender]
+            self._spawn(self._on_command(body, sender_name or sender or "someone", ids))
         elif room == self.s.fix_room and self.s.fix_room:
             m = FIX_REPLY.search(body)
-            if m:
+            if m and self._from_agent(self.s.fixer_name, sender, sender_name, body):
                 self._spawn(self._on_fix_reply(m.group(1), m.group(2)))
+
+    def _from_agent(self, agent: str, sender: str, sender_name: str, body: str) -> bool:
+        """Only the room's own agent may answer there. Our own dispatches echoed back are ignored."""
+        if body.lstrip().startswith((f"@{agent} [batch ", f"@{agent} [fix ")):
+            return False
+        if not self.s.strict_sender:
+            return True
+        ok = sender_name.lower() == agent.lower() or agent.lower() in sender.lower()
+        if not ok:
+            log.warning("ignored a message in %s's room from %r (%r)", agent, sender_name, sender)
+        return ok
 
     def _spawn(self, coro: Any) -> None:
         task = asyncio.create_task(self._guard(coro))
@@ -163,14 +181,14 @@ class Arbiter:
 
     # ---- commands ---------------------------------------------------------------------
 
-    async def _on_command(self, body: str, user: str) -> None:
+    async def _on_command(self, body: str, user: str, ids: list[str] | None = None) -> None:
         verb, _, rest = strip_mentions(body).partition(" ")
         verb, rest = verb.lower(), rest.strip()
         if verb == "ask" and rest:
             await self.ask(rest, user)
         elif verb in ("approve", "override", "reject"):
             case_id, _, arg = rest.partition(" ")
-            await self.decide(case_id, user, verb, arg.strip())
+            await self.decide(case_id, user, verb, arg.strip(), ids or [user])
         elif verb == "show" and CASE_ID.match(rest):
             result = self.store.result(rest)
             await self.say(
@@ -222,7 +240,7 @@ class Arbiter:
     # ---- sealed collection --------------------------------------------------------------
 
     async def collect(
-        self, questions: dict[str, str], case_ids: dict[str, str], ref: str
+        self, questions: dict[str, str], case_ids: dict[str, str], ref: str, sha: str | None = None
     ) -> dict[str, dict[str, AgentAnswer]]:
         """Ask every desk the same questions in parallel; return {question_id: {worker: answer}}.
 
@@ -233,7 +251,7 @@ class Arbiter:
         items = list(questions.items())
         for start in range(0, len(items), max(1, self.s.batch_size)):
             chunk = dict(items[start : start + self.s.batch_size])
-            batch = Batch(new_id(), ref, chunk, {q: case_ids[q] for q in chunk})
+            batch = Batch(new_id(), ref, sha, chunk, {q: case_ids[q] for q in chunk})
             loop = asyncio.get_running_loop()
             batch.futures = {w: loop.create_future() for w in self.desks}
             self.batches[batch.batch_id] = batch
@@ -269,29 +287,31 @@ class Arbiter:
 
     def _dispatch_text(self, worker: str, batch: Batch) -> str:
         qs = "\n".join(f"{qid}: {text}" for qid, text in batch.questions.items())
+        pin = f" [sha {batch.sha}]" if batch.sha else ""
+        at = f"commit `{batch.sha}` of `{batch.ref}`" if batch.sha else f"git ref `{batch.ref}`"
         return (
-            f"@{worker} [batch {batch.batch_id}] [ref {batch.ref}]\n"
-            f"Answer each question from the docs at git ref `{batch.ref}`. Start your reply with "
+            f"@{worker} [batch {batch.batch_id}] [ref {batch.ref}]{pin}\n"
+            f"Answer each question from the docs at {at}. Start your reply with "
             f"`[batch {batch.batch_id}]`, then one ```json block per question in the Answer Contract, "
             f'with "question_id" set.\n{qs}'
         )
 
     def _on_desk_reply(self, worker: str, body: str) -> None:
+        """A reply counts only if it names a batch that is still waiting. Untagged replies and
+        replies to finished batches are dropped, so an answer can never land on the wrong case."""
         m = BATCH_TAG.search(body)
-        candidates = (
-            [self.batches[m.group(1)]]
-            if m and m.group(1) in self.batches
-            else [b for b in self.batches.values() if not b.futures[worker].done()]
-        )
-        for batch in candidates[:1]:
-            fut = batch.futures.get(worker)
-            if fut is not None and not fut.done():
-                fut.set_result(body)  # first reply only: later ones find the future done
+        batch = self.batches.get(m.group(1)) if m else None
+        if batch is None:
+            log.warning("dropped a reply from %s with no open batch tag", worker)
+            return
+        fut = batch.futures.get(worker)
+        if fut is not None and not fut.done():
+            fut.set_result(body)  # first reply only: later ones find the future done
 
     # ---- rulings, fixes, retests ------------------------------------------------------------
 
-    async def decide(self, case_id: str, user: str, verb: str, arg: str) -> None:
-        ruling = rule(self.store, case_id, user, verb, arg, self.s.approver_set())
+    async def decide(self, case_id: str, user: str, verb: str, arg: str, ids: list[str] | None = None) -> None:
+        ruling = rule(self.store, case_id, user, verb, arg, self.s.approver_set(), ids or [user])
         await self.say(ruling.message)
         if not (ruling.ok and ruling.edits):
             return
@@ -315,7 +335,7 @@ class Arbiter:
         await self.say(f"Asked @{self.s.fixer_name} to open a PR on `{branch_for(case_id)}`.")
 
     async def _on_fix_reply(self, case_id: str, url: str) -> None:
-        ruling = self.pending_fixes.get(case_id)
+        ruling = self.pending_fixes.pop(case_id, None)  # taken at once: a duplicate reply finds nothing
         if ruling is None:
             return
         if self.github is None:
@@ -323,29 +343,33 @@ class Arbiter:
                 f"Fixer reported {url}, but GITHUB_TOKEN/GITHUB_DEMO_REPO are not set, so SamePage "
                 "cannot check the diff. Not retesting an unchecked PR."
             )
+            self.pending_fixes[case_id] = ruling
             return
         pr = await self.github.pull_request(url)
         problems = []
         if pr.head_ref != branch_for(case_id):
             problems.append(f"PR branch is `{pr.head_ref}`, expected `{branch_for(case_id)}`")
+        if pr.base_ref != "main":
+            problems.append(f"PR targets `{pr.base_ref}`, expected `main`")
         if pr.merged or pr.state != "open":
             problems.append(f"PR must be open and unmerged (state {pr.state}, merged {pr.merged})")
         prefix = f"{self.s.docs_subdir.strip('/')}/" if self.s.docs_subdir else ""
         problems += diff_problems(pr.diff, ruling, prefix)
         if problems:
-            self.store.save_fix_pr(case_id, pr.url, pr.head_ref, "rejected_by_guard")
+            self.store.save_fix_pr(case_id, pr.url, pr.head_ref, "rejected_by_guard", pr.head_sha)
+            self.pending_fixes[case_id] = ruling  # the fixer may push a corrected PR and report again
             await self.say(f"PR {pr.url} for `{case_id}` failed the safety check: " + "; ".join(problems))
             return
-        self.store.save_fix_pr(case_id, pr.url, pr.head_ref, "open")
+        self.store.save_fix_pr(case_id, pr.url, pr.head_ref, "open", pr.head_sha)
         self.store.set_state(case_id, "FIX_OPEN")
-        self.pending_fixes.pop(case_id, None)
         await self.say(
-            f"PR opened for `{case_id}`: {pr.url}. The diff only touches the approved lines. "
-            "Retesting both agents against the fix branch now."
+            f"PR opened for `{case_id}`: {pr.url}. The diff only touches the approved lines. Checked at "
+            f"commit `{pr.head_sha[:12]}`; retesting both agents at that commit. If the PR changes after "
+            "this, it is no longer the checked fix."
         )
-        await self.retest(case_id, pr.head_ref, ruling)
+        await self.retest(case_id, pr.head_ref, ruling, pr.head_sha)
 
-    async def retest(self, case_id: str, ref: str, ruling: Ruling) -> dict[str, object]:
+    async def retest(self, case_id: str, ref: str, ruling: Ruling, sha: str | None = None) -> dict[str, object]:
         row = self.store.case(case_id)
         if row is None or ruling.truth_value is None:
             raise RuntimeError(f"cannot retest case {case_id}: no case or no approved truth")
@@ -360,8 +384,9 @@ class Arbiter:
             for q, sub in cases.items():
                 self.store.create_case(sub, qids[q], canonical, at)
                 self.store.audit(sub, "retest_of", {"parent": case_id, "phase": label})
-            answers = await self.collect(qids, cases, at)
-            engine = self.engine(at)
+            pinned = sha if label == "after" else None
+            answers = await self.collect(qids, cases, at, pinned)
+            engine = self.engine(pinned or at)
             for q, text in qids.items():
                 rows[q][label] = engine.evaluate(text, list(answers[q].values()))
         table = [RetestRow(qids[q], rows[q]["before"], rows[q]["after"]) for q in qids]

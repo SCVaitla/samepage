@@ -19,6 +19,7 @@ class PullRequest:
     url: str
     number: int
     head_ref: str
+    head_sha: str
     base_ref: str
     state: str
     merged: bool
@@ -56,6 +57,7 @@ class GitHub:
             url=m.group(0),
             number=number,
             head_ref=meta["head"]["ref"],
+            head_sha=meta["head"]["sha"],
             base_ref=meta["base"]["ref"],
             state=meta["state"],
             merged=bool(meta.get("merged")),

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     desks: str = Field(default="", alias="SAMEPAGE_DESKS")
     fix_room: str = Field(default="", alias="SAMEPAGE_FIX_ROOM")
     fixer_name: str = Field(default="samepage-fixer", alias="SAMEPAGE_FIXER")
+    # Accept a desk reply only from that desk's agent (by sender name or id). Turn off only if the
+    # live run shows Switch reports agent senders differently (docs/RUNBOOK.md, troubleshooting).
+    strict_sender: bool = Field(default=True, alias="SAMEPAGE_STRICT_SENDER")
 
     agent_timeout_s: float = Field(default=240.0, alias="SAMEPAGE_AGENT_TIMEOUT")
     batch_size: int = Field(default=6, alias="SAMEPAGE_BATCH_SIZE")

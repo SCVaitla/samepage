@@ -200,10 +200,18 @@ class FakeGitHub:
 
     async def pull_request(self, url: str) -> PullRequest:
         return PullRequest(
-            url=url, number=7, head_ref=self.head, base_ref="main", state="open", merged=False, diff=self.diff
+            url=url,
+            number=7,
+            head_ref=self.head,
+            head_sha="a" * 40,
+            base_ref=self.base,
+            state="open",
+            merged=False,
+            diff=self.diff,
         )
 
     head = ""
+    base = "main"
 
 
 def settings(tmp_path: Path, **extra: Any) -> Settings:
@@ -317,7 +325,7 @@ def test_rulings_need_authority_and_support_override_and_reject(tmp_path: Path) 
         case_id = re.search(r"case `([0-9a-f]{8})`", sw.in_room(ASK)[-1]).group(1)  # type: ignore[union-attr]
         await sw.say(f"approve {case_id}", user="mallory")
         await drain()
-        assert "can't rule" in sw.in_room(ASK)[-1] and "@support-lead" in sw.in_room(ASK)[-1]
+        assert "can't approve" in sw.in_room(ASK)[-1] and "@support-lead" in sw.in_room(ASK)[-1]
         await sw.say(f"override {case_id} nowhere.md")
         await drain()
         assert "isn't part of this case" in sw.in_room(ASK)[-1]
@@ -340,8 +348,12 @@ def test_owner_of_a_losing_source_may_rule(tmp_path: Path) -> None:
         await drain()
         case_id = re.search(r"case `([0-9a-f]{8})`", sw.in_room(ASK)[-1]).group(1)  # type: ignore[union-attr]
         await sw.say(f"reject {case_id} macro is being retired", user="support-lead")
+        await sw.say(f"override {case_id} support/macros.md", user="support-lead")
         await drain()
-        assert "rejected case" in sw.in_room(ASK)[-1]
+        assert "Only an approver can" in sw.in_room(ASK)[-2] and "Only an approver can" in sw.in_room(ASK)[-1]
+        await sw.say(f"approve {case_id}", user="support-lead")
+        await drain()
+        assert any("chose **approve**" in c for c in sw.in_room(ASK))
 
     asyncio.run(scenario())
 
@@ -404,3 +416,55 @@ def test_patrol_on_a_ref_and_holdout_ask_the_right_ref(tmp_path: Path) -> None:
         assert "6 question(s)" in next(c for c in reversed(sw.in_room(ASK)) if "holdout/h1" in c)
 
     asyncio.run(scenario())
+
+
+def test_replies_without_an_open_batch_tag_or_from_others_are_dropped(tmp_path: Path) -> None:
+    """Review H4/M3: a stale, untagged or foreign reply never lands on a case."""
+    arb, sw, _ = make(tmp_path, SAMEPAGE_AGENT_TIMEOUT=0.5)
+    sw.silent = {"samepage-claude", "samepage-codex"}
+
+    async def scenario() -> None:
+        await sw.say("ask Does the Starter plan include single sign-on?")
+        await asyncio.sleep(0.05)
+        batch = next(iter(arb.batches))
+        good = fake_answer("samepage-claude", "single sign-on", "main", "q1")
+        await sw._event(DESKS["samepage-claude"], good, "samepage-claude")  # untagged
+        await sw._event(DESKS["samepage-claude"], "[batch deadbeef]\n" + good, "samepage-claude")  # stale tag
+        await sw._event(DESKS["samepage-claude"], f"[batch {batch}]\n" + good, "mallory")  # wrong sender
+        await sw._event(DESKS["samepage-claude"], f"@samepage-claude [batch {batch}] echo", "")  # our own echo
+        await drain()
+        card = sw.in_room(ASK)[-1]
+        assert "UNSUPPORTED" in card and card.count("timeout") >= 2
+
+    asyncio.run(scenario())
+
+
+def test_pr_against_another_base_is_refused_and_duplicates_retest_once(tmp_path: Path) -> None:
+    faq_line = span_of("website/faq.md", "Single sign-on is included on all plans")[0]
+    sales_line = span_of("sales/faq.md", "Starter can enable SSO from the admin settings")[0]
+    _arb, sw, gh = make(tmp_path, diff_for({"website/faq.md": [faq_line], "sales/faq.md": [sales_line]}))
+    gh.base = "release"
+
+    async def scenario() -> None:
+        await sw.say("ask Is SSO available on Starter?")
+        await drain()
+        case_id = re.search(r"case `([0-9a-f]{8})`", sw.in_room(ASK)[-1]).group(1)  # type: ignore[union-attr]
+        gh.head = f"samepage/{case_id}"
+        await sw.say(f"approve {case_id}")
+        await drain()
+        assert any("targets `release`" in c for c in sw.in_room(ASK))
+        gh.base = "main"
+        reply = f"[fix {case_id}] PR: https://github.com/acme/juniper-docs/pull/7"
+        await asyncio.gather(sw._event(FIX, reply, "samepage-fixer"), sw._event(FIX, reply, "samepage-fixer"))
+        await drain()
+        assert sum("Retest for case" in c for c in sw.in_room(ASK)) == 1
+        assert any("[sha " + "a" * 40 + "]" in c for c in sw.in_room(DESKS["samepage-codex"]))
+
+    asyncio.run(scenario())
+
+
+def test_one_desk_is_not_a_second_opinion(tmp_path: Path) -> None:
+    import pytest
+
+    with pytest.raises(ValueError, match="at least two desks"):
+        make(tmp_path, SAMEPAGE_DESKS="samepage-claude=room-desk-a")

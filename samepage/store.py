@@ -172,14 +172,15 @@ class Store:
         row: sqlite3.Row | None = self.conn.execute("SELECT * FROM fix_prs WHERE case_id = ?", (case_id,)).fetchone()
         return row
 
-    def save_fix_pr(self, case_id: str, url: str, branch: str, status: str) -> None:
+    def save_fix_pr(self, case_id: str, url: str, branch: str, status: str, head_sha: str = "") -> None:
         self.conn.execute(
-            "INSERT INTO fix_prs (case_id, url, branch, status) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(case_id) DO UPDATE SET url = excluded.url, status = excluded.status",
-            (case_id, url, branch, status),
+            "INSERT INTO fix_prs (case_id, url, branch, status, head_sha) VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT(case_id) DO UPDATE SET url = excluded.url, status = excluded.status, "
+            "head_sha = excluded.head_sha",
+            (case_id, url, branch, status, head_sha),
         )
         self.conn.commit()
-        self.audit(case_id, "fix_pr", {"url": url, "branch": branch, "status": status})
+        self.audit(case_id, "fix_pr", {"url": url, "branch": branch, "status": status, "head_sha": head_sha})
 
     def save_retest(self, case_id: str, ref: str, results: dict[str, Any]) -> None:
         self.conn.execute(

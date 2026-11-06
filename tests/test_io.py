@@ -134,7 +134,13 @@ def test_github_reads_pr_and_rejects_other_repos() -> None:
         if request.headers["Accept"] == "application/vnd.github.diff":
             return httpx.Response(200, text="--- a/x\n+++ b/x\n")
         return httpx.Response(
-            200, json={"head": {"ref": "samepage/abcdef12"}, "base": {"ref": "main"}, "state": "open", "merged": False}
+            200,
+            json={
+                "head": {"ref": "samepage/abcdef12", "sha": "b" * 40},
+                "base": {"ref": "main"},
+                "state": "open",
+                "merged": False,
+            },
         )
 
     gh = GitHub(

@@ -54,7 +54,7 @@ def test_store_seals_first_answer_only_and_audit_is_append_only(tmp_path: Path) 
 def test_store_migrations_are_idempotent(tmp_path: Path) -> None:
     Store(tmp_path / "t.sqlite")
     s = Store(tmp_path / "t.sqlite")
-    assert s.conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 1
+    assert s.conn.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 2
     assert s.result("nope") is None and s.case("nope") is None
     s.add_question("q1", "text", "C1")
     s.add_question("q1", "text", "C1")

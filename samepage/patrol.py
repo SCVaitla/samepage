@@ -40,16 +40,21 @@ def patrol_report(items: list[PatrolItem], ref: str, arbiter: str) -> str:
 
 
 def headline_values(result: CaseResult) -> dict[str, str]:
-    """Each agent's headline value key ('' if it had none)."""
+    """Each agent's headline value key: its FIRST claim, and only if that claim verified ('' otherwise)."""
     out: dict[str, str] = {agent: "" for agent in result.answers}
+    seen: set[str] = set()
     for c in result.checked:
-        if c.verified and not out.get(c.agent):
-            out[c.agent] = c.value_key
+        if c.agent not in seen:
+            seen.add(c.agent)
+            out[c.agent] = c.value_key if c.verified else ""
     return out
 
 
 def consistent(result: CaseResult, truth: str) -> bool:
-    """Both agents gave the same verified answer, and it is the approved truth."""
+    """Both agents gave the approved truth as their verified headline claim, AND the case is
+    clean (VERIFIED or COMPATIBLE): no doc still disagrees, nothing unsupported."""
+    if result.outcome not in (Outcome.VERIFIED, Outcome.COMPATIBLE):
+        return False
     values = headline_values(result)
     return len(values) >= 2 and all(v == truth for v in values.values())
 
