@@ -158,6 +158,9 @@ def plan_availability(text: str, plans: list[str]) -> set[str] | None:
     restrictive = False
     # "Everything in Starter" on a pricing page points at another plan's features; it says nothing here.
     text = re.sub(r"\b(everything|all features) (in|of|from) (the )?\w+( plan)?", " ", text, flags=re.IGNORECASE)
+    # A line wrapped mid-sentence ("not available\non the Starter plan") is one clause; a new
+    # paragraph, list item or table row starts another. (Live run 2026-11-06.)
+    text = re.sub(r"\n(?!\s*\n|\s*(?:[-*+|]|\d+\.)\s)", " ", text)
     for clause in re.split(r"(?<=[.;!?\n])", text):
         if clause.strip().rstrip("*_ ").endswith("?"):
             continue  # a question asserts nothing ("Can a Starter customer use SSO?")
@@ -200,6 +203,21 @@ def bool_key(value: str) -> str | None:
     return None
 
 
+LEADING_NO = re.compile(
+    r"^\s*(no\b|not\b|none\b|unavailable|excluded|never|isn't|is not|cannot|can't|doesn't|does not)",
+    re.IGNORECASE,
+)
+
+
+def leading_verdict(value: str) -> str | None:
+    """A claim value about the asked plan that opens with a refusal is a no, whatever follows.
+
+    Live run 2026-11-06: agents wrote "not available (Enterprise only)" and "Not available,
+    including as a paid add-on". Plan-by-plan reading saw "not ... Enterprise" and inverted it.
+    """
+    return "bool:false" if LEADING_NO.match(value) else None
+
+
 def text_key(value: str) -> str:
     return "text:" + "_".join(re.findall(r"[a-z0-9]+", value.lower()))
 
@@ -212,6 +230,8 @@ def normalize_claim_value(value: str, quote: str, attribute: str, plan: str | No
             return Value(found[0].key, value, 0)
     if bk := bool_key(value):
         return Value(bk, value, 0)
+    if plan and (lead := leading_verdict(value)):
+        return Value(lead, value, 0)
     if plan:
         avail = plan_availability(value, plans)
         if avail is not None:

@@ -63,6 +63,15 @@ def new_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
+def mark(text: str) -> str:
+    """Tag our own posts. A card's marker goes last, so its Markdown heading still renders."""
+    return f"{text}\n\n`{MARKER}`" if "\n" in text else f"{MARKER} {text}"
+
+
+def is_own(body: str) -> bool:
+    return body.startswith(MARKER) or body.rstrip().endswith(f"`{MARKER}`")
+
+
 COMMANDS = ("ask", "approve", "override", "reject", "show", "patrol", "trust", "history", "help")
 
 
@@ -150,7 +159,7 @@ class Arbiter:
             return
         p = event.get("payload") or {}
         body = str(p.get("body") or "")
-        if body.startswith(MARKER) or p.get("sender_name") == self.s.switch_agent_name:
+        if is_own(body) or p.get("sender_name") == self.s.switch_agent_name:
             return
         room = event.get("room_id")
         sender, sender_name = str(p.get("sender") or ""), str(p.get("sender_name") or "")
@@ -190,7 +199,7 @@ class Arbiter:
             await self.say(f"Something went wrong: {type(exc).__name__}: {exc}. No case was marked verified.")
 
     async def say(self, text: str, room: str | None = None) -> None:
-        await self.t.post(room or self.s.ask_room, f"{MARKER} {text}")
+        await self.t.post(room or self.s.ask_room, mark(text))
 
     # ---- commands ---------------------------------------------------------------------
 
@@ -219,11 +228,10 @@ class Arbiter:
         elif verb == "history" and rest:
             await self.say(self.history(rest))
         else:
-            n = self.s.switch_agent_name
             await self.say(
-                f"Commands: `@{n} ask <question>` · `show <case>` · `approve <case>` · "
-                f"`override <case> <file>` · `reject <case> <why>` · `patrol [full]` · `trust` · "
-                f"`history <case or topic>`"
+                "Commands: `ask <question>` · `show <case>` · `approve <case>` · "
+                "`override <case> <file>` · `reject <case> <why>` · `patrol [full]` · `trust` · "
+                "`history <case or topic>` (no @mention needed in this room)"
             )
 
     def canonical_for(self, question: str) -> str:

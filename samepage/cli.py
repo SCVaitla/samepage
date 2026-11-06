@@ -132,7 +132,7 @@ def cmd_eval(args: argparse.Namespace, s: Settings) -> None:
         title = "SamePage evaluation (golden set C1-C6)"
         eq = equivalence(cases, corpus.glossary, s.equivalence_threshold)
     scores = None
-    source = "none recorded yet: run `@samepage-arbiter patrol full` in the room first"
+    source = "none recorded yet: run `patrol full` in the samepage-ask room first"
     if answers_file is not None:
         answers = load_answers(answers_file)
         if any(q in answers for c in cases for q in c.questions()):

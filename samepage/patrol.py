@@ -35,7 +35,7 @@ def patrol_report(items: list[PatrolItem], ref: str, arbiter: str) -> str:
             tail = f": case `{item.case_id}`, wrong value in {len(radius)} place(s)"
         lines.append(f"- {badge}: {item.question}{tail}")
     if alarms:
-        lines += ["", f"Open a case with `@{arbiter} show <case>` to see the evidence and rule on it."]
+        lines += ["", "Reply `show <case>` to see the evidence and rule on it."]
     return "\n".join(lines)
 
 

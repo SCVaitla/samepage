@@ -64,6 +64,7 @@ def investigation_card(case_id: str, result: CaseResult, arbiter: str) -> str:
         p = result.proposal
         lines += [
             "**Evidence**",
+            "",
             "| Says | Where | Source (authority) | Found by | Quote |",
             "|---|---|---|---|---|",
         ]
@@ -85,9 +86,8 @@ def investigation_card(case_id: str, result: CaseResult, arbiter: str) -> str:
             lines.append("**Owners asked to rule:** " + " ".join(owners))
         lines += [
             "",
-            f"Rule with `@{arbiter} approve {case_id}` (accept the proposal), "
-            f"`@{arbiter} override {case_id} <file>` (that file is the truth), or "
-            f"`@{arbiter} reject {case_id} <reason>`.",
+            f"Rule by replying here (no @mention needed): `approve {case_id}` (accept the proposal), "
+            f"`override {case_id} <file>` (that file is the truth), or `reject {case_id} <reason>`.",
         ]
     elif result.evidence:
         lines.append("**Evidence**")
