@@ -24,3 +24,4 @@ reports/*.tmp
 .DS_Store
 
 .audit-requirements.txt
+reports/frames.jsonl

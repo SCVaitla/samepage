@@ -6,7 +6,7 @@ Companies keep the same product facts in many places: the spec, the website, the
 
 Built for Flip the Switch (Best Business Workflow). *Juniper Desk, the company in every example, is fictional.*
 
-> **Status (2026-11-05):** engine, arbiter, template and tests are built and pass in CI-equivalent checks. The **live run on a real Switch server has not happened yet** (`docs/RUNBOOK.md`), so live behaviour and detection metrics are unverified. See [Known limitations](#known-limitations).
+> **Status (2026-11-06):** runs live on Switch Console 0.40.1 (server 0.31.0) with real Claude Code and Codex agents and a real GitHub repo. The full loop ran end to end: ask → sealed answers → card → `approve` → fixer opened [PR #1](https://github.com/SCVaitla/juniper-desk-docs/pull/1) → retest 0/4 → 4/4 → RESOLVED. Evaluation numbers below come from real agent answers.
 
 ## How Switch is used
 
@@ -17,8 +17,8 @@ Switch is the backbone, not a plugin. Without it there are no sealed rooms, no a
 | **The SamePage Arbiter is itself a Switch agent** | Agent protocol: register once, SSE stream in, HTTP posts out, 2 s heartbeat | `samepage/switch_client.py`, `samepage/arbiter.py` |
 | **Sealed answers** | Each worker gets a *private desk room*; Switch only lets an agent read rooms it is a member of | `switch/samepage.template.yaml`, ADR 0001 |
 | **Two different agents** | Claude Code and Codex, run by Switch Console, each with the docs repo cloned through `repo:` | template `agents:` |
-| **Human ruling in the chat** | Addressed messages to the arbiter (`@samepage-arbiter approve <case>`) | `samepage/decide.py` |
-| **The fix** | A fixer agent with a GitHub connection, in its own private room | template, `samepage/fixer.py` |
+| **Human ruling in the chat** | A reply in the ask room (`approve <case>`), received as a message event with the sender's identity | `samepage/decide.py` |
+| **The fix** | A Claude Code fixer agent in its own private room, opening the PR with `gh` | template, `samepage/fixer.py` |
 | **One-click setup** | A Switch YAML template: 3 agents, 5 rooms, links | `switch/samepage.template.yaml` |
 
 ```mermaid
@@ -29,7 +29,7 @@ sequenceDiagram
   participant DA as desk-claude (private)
   participant DB as desk-codex (private)
   participant Fix as samepage-fix (private)
-  H->>Ask: @samepage-arbiter ask Does Starter include SSO?
+  H->>Ask: ask Does Starter include SSO?
   Ask-->>Arb: SSE message event
   par sealed
     Arb->>DA: @samepage-claude [batch] q1
@@ -38,28 +38,24 @@ sequenceDiagram
   DA-->>Arb: JSON claims + verbatim quotes (sealed: sha256 + time)
   DB-->>Arb: JSON claims + verbatim quotes (sealed: sha256 + time)
   Arb->>Ask: Card: both answers revealed, evidence, blast radius, owners
-  H->>Ask: @samepage-arbiter approve <case>
+  H->>Ask: approve <case>
   Arb->>Fix: Fix brief (exact lines)
   Fix-->>Arb: [fix case] PR: url
   Arb->>Arb: Diff guard (only approved lines), then retest on the branch
-  Arb->>Ask: Retest card: 0/3 before → 3/3 after · RESOLVED
+  Arb->>Ask: Retest card: 0/4 before → 4/4 after · RESOLVED
 ```
 
 ## What it looks like
 
-A card from the end-to-end test (`tests/test_arbiter.py`), run against fake agents that cite real lines. Screenshots from the live run go in `docs/evidence/`.
+From the live run on 2026-11-06 (real Switch, Claude Code, Codex and GitHub):
 
-```
-#### SamePage case `9df9b224`: 🚨 CONFLICT
-Question: Does the Starter plan include single sign-on?
-Sealed answers (revealed together): samepage-claude: true · samepage-codex: false
-Evidence: bool:false  product_spec.md L44 (authority 1) · help_center/security-and-sso.md L14-16 · support/macros.md L30-31
-          bool:true   website/faq.md L20 (authority 3) · sales/faq.md L20-22
-Blast radius: the disputed value appears in 2 place(s) across 2 team(s)
-Proposed truth (advice, you decide): bool:false, from product_spec.md
-Owners asked to rule: @marketing-lead @sales-lead
-🛡 Ignored text that reads like instructions to AI agents: help_center/security-and-sso.md L29
-```
+| Both agents in one room (Gate 0) | The investigation card |
+|---|---|
+| ![smoke room](docs/evidence/gate0-smoke-both-workers.png) | ![card](docs/evidence/live-c1-first-card-before-fix.png) |
+| **The fixer opens a real PR** | **Retest on the fix branch: RESOLVED** |
+| ![fixer](docs/evidence/live-c1-fixer-opened-pr.png) | ![retest](docs/evidence/live-c1-retest-resolved.png) |
+
+The card screenshot is from the first live ask, before two reading bugs were fixed (it says CONFLICT; the same question now says SOURCE_CONFLICT, as in the retest). The fix and its test, built from the agents' real replies, are in `tests/test_live_replies.py`.
 
 ## Features
 
@@ -68,8 +64,8 @@ Owners asked to rule: @marketing-lead @sales-lead
 - **Agreement isn't proof:** the engine scans the docs for every passage about the same fact (found by the question's and both agents' topic words), so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`. Agreement it cannot cross-check is `UNSUPPORTED`, never `VERIFIED`.
 - **Blast radius:** every place the wrong fact appears, and which team reads it.
 - **Owner routing:** the owners of the wrong docs are @mentioned and may approve the proposed fix (overrides and rejects need an approver).
-- **Drift patrol:** `@samepage-arbiter patrol` re-asks everything known, before a customer does.
-- **Source trust ledger:** `@samepage-arbiter trust` shows which docs keep losing rulings.
+- **Drift patrol:** `patrol` re-asks everything known, before a customer does.
+- **Source trust ledger:** `trust` shows which docs keep losing rulings.
 - **Safe fix:** a PR that changes anything beyond the approved lines is refused, and the checked commit is what gets retested; nothing is ever auto-merged.
 
 ## Quickstart
@@ -81,12 +77,12 @@ make seed       # what the engine sees in the docs
 make up         # engine API in Docker: http://localhost:8080/healthz
 ```
 
-The live demo (Switch Console, Mattermost, the two agents, the docs repo) is set up step by step in **[docs/RUNBOOK.md](docs/RUNBOOK.md)**. In the room:
+The live demo (Switch Console, the two agents, the docs repo) is set up step by step in **[docs/RUNBOOK.md](docs/RUNBOOK.md)**. In short: start Console's local server, `uv run samepage connect`, import `switch/samepage.template.yaml` and use it, `uv run samepage wire-rooms`, `make arbiter`. In the samepage-ask room (no @mention needed there):
 
 ```
-@samepage-arbiter ask <question>         @samepage-arbiter patrol [full | on <ref> | holdout]
-@samepage-arbiter approve <case> [why]   @samepage-arbiter override <case> <file>
-@samepage-arbiter reject <case> <why>    @samepage-arbiter trust | history <case or topic> | show <case>
+ask <question>          patrol [full | on <ref> | holdout]
+approve <case> [why]    override <case> <file>     reject <case> <why>
+trust                   history <case or topic>    show <case>
 ```
 
 ## Outcome states
@@ -102,16 +98,34 @@ The live demo (Switch Console, Mattermost, the two agents, the docs repo) is set
 
 ## Evaluation
 
-From `reports/eval-20261106T041456Z.md` (2026-11-06 04:14 UTC, commit `0793d1a`):
+Real runs: `patrol full` asked both agents all 36 golden questions (C1–C6, 6 wordings each), sealed, on `main` of the drifted docs repo; `make eval` scored the recorded answers. Copied from [`reports/eval-20261106T220548Z.md`](reports/eval-20261106T220548Z.md) (2026-11-06 22:05 UTC, commit `8d53033`, answers in `reports/answers-20261106T220244Z.jsonl`):
 
 | Metric | Result | Target |
 |---|---|---|
 | Question equivalence accuracy | 29/30 = 0.97 | ≥ 0.9 |
-| Conflict detection precision / recall | not run (no recorded agent answers) | ≥ 0.90 / ≥ 0.80 |
-| False alarms on COMPATIBLE | not run | 0 |
-| Evidence validity | not run | 100% |
+| Conflict detection precision | 0.94 (TP 17, FP 1) | ≥ 0.90 |
+| Conflict detection recall | 0.94 (FN 1) | ≥ 0.80 |
+| False alarm rate on COMPATIBLE | 0.08 (1/12) | 0 |
+| Exact state accuracy | 0.64 (23/36) | n/a |
+| Evidence validity (claims with verified quotes) | 0.96 (110/114) | 1.00 of displayed claims |
+| Both agents right and consistent (before fix) | 0.37 (11/30) | n/a (after-fix comes from retest) |
 
-Held-out H1: not run yet. Detection numbers need a recorded live patrol (`@samepage-arbiter patrol full`, then `make eval`). They are reported only from real runs.
+**Held-out H1** (audit log retention, never seen during development; inserted only on branch `holdout/h1`), from [`reports/eval-holdout-20261106T220951Z.md`](reports/eval-holdout-20261106T220951Z.md) (2026-11-06 22:09 UTC, commit `8d53033`):
+
+| Metric | Result | Target |
+|---|---|---|
+| Conflict detection precision | 1.00 (TP 6, FP 0) | ≥ 0.90 |
+| Conflict detection recall | 1.00 (FN 0) | ≥ 0.80 |
+| Exact state accuracy | 0.00 (0/6) | n/a |
+| Evidence validity (claims with verified quotes) | 0.95 (18/19) | 1.00 of displayed claims |
+
+**H1 detected: 6/6.** All six came back `SOURCE_CONFLICT`, not the expected `CONFLICT`: both agents read the spec correctly (365 days), and SamePage still found the pricing page saying 90.
+
+**After the fix:** the live retest of C1 on the fix branch went from 0/4 to 4/4 (both agents right and consistent), case RESOLVED.
+
+**Reading the numbers honestly:**
+- Expected states were written assuming the agents would disagree on C1, C2 and H1. With the real agents they agreed on the right answer, so most of those rows are `SOURCE_CONFLICT`: still an alarm, still the right sources blamed, but not an exact match. That is why exact state accuracy is low while recall is high.
+- The misses are SamePage's, not the agents': see the first three items under Known limitations. We did not change the engine and re-score these answers; that would be tuning on the evaluation.
 
 ## Architecture
 
@@ -125,7 +139,7 @@ Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 ## Security
 
 - **Docs are data:** lines that read like instructions to AI are excluded from facts and shown as ignored; a test proves an injected line changes no outcome.
-- **Least privilege:** the engine's GitHub token is fine-grained, one repo, read-only. The fixer writes through the deployer's Switch GitHub connection. `main` is branch-protected, and SamePage has no merge call.
+- **Least privilege:** the engine's GitHub token is fine-grained, one repo, read-only. The fixer opens PRs with the `gh` sign-in on the machine that runs it, and is instructed to touch only the docs repo; every PR still has to pass the diff guard, and SamePage has no merge call. (Console's GitHub connector, which can scope a grant to one repo, needs an https server address; a local server is http.)
 - **Diff guard:** a PR is refused unless it targets `main` from `samepage/<case>`, is open, changes only lines inside the approved passages (with a cap on added lines), and has no renames, mode changes, or new, deleted or binary files. The retest runs at the exact commit that was checked.
 - **Authority in code:** approvers can make any ruling; owners of the losing docs can only approve the proposal. Approvers can be configured by the sender's unique id.
 - **Sealing in code:** a desk reply counts only if it comes from that desk's agent and names a batch that is still open; stale, untagged or echoed messages are dropped.
@@ -134,8 +148,11 @@ Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
 ## Known limitations
 
-- **Not yet run live.** Switch behaviour is designed from the source at commit `7e1316f` but unconfirmed in five places (ADR 0001, U1–U5), including whether an always-on custom agent can post while streaming and whether an @mention from the arbiter wakes a Console-run agent.
-- **Detection metrics not yet measured** (see Evaluation).
+- **Plan read from the wrong field (1 false CONFLICT, C1).** Claude Code answered "upgrade to Enterprise" with the qualifier "non-Enterprise plans"; the engine took the plan from the qualifier (Enterprise) and read it as yes.
+- **Table cells (1 UNSUPPORTED, C3).** A quote of a table row (`| Seats per workspace | 5 | 250 | Unlimited |`) has no plan or unit next to the number, so the engine can't confirm the quote states "5 seats" for Starter. It refuses rather than guesses.
+- **Yes/no versus a schedule (the 1 COMPATIBLE false alarm, C4).** "Is support available on weekends?": one agent answered "yes, including weekends and holidays", the other "24/7"; the engine compares those as different values.
+- **Blast radius can over-reach.** For two H1 wordings the scan also listed a changelog line about the trash keeping deleted items for 30 days, because it shares "keep", "deleted" and a number of days with the question.
+- **One machine.** The demo runs on Switch Console's local server; the agents, the arbiter and the `gh` sign-in all live on the presenter's Mac.
 - **Lexical question matching:** "Does Juniper Desk support HIPAA?" maps to the support-hours question (the one miss in 30), and "Is there phone support?" scores 0.72 against support hours. A sentence-embedding backend can be plugged in (`Embedder` protocol).
 - **Value types are limited** to durations, seats, rates, 24/7 schedules, yes/no and plan availability. Other values are compared as text and not cross-checked across the docs.
 - **The 90-second answer target** depends on agent speed; the default timeout is 240 s.
