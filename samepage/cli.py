@@ -74,6 +74,33 @@ def cmd_rooms(_: argparse.Namespace, s: Settings) -> None:
     print(json.dumps(r.json().get("result"), indent=2)[:6000])
 
 
+def cmd_connect(args: argparse.Namespace, s: Settings) -> None:
+    """Register the arbiter on the Switch server Console runs on this computer, and fill in .env."""
+    from samepage.setup_local import SetupError, connect
+
+    try:
+        done = connect(Path(args.switch_dir), Path(args.env_file), s.switch_agent_name)
+    except SetupError as exc:
+        raise SystemExit(f"connect: {exc}") from exc
+    print(f"Connected to the local Switch server at {done['url']}.")
+    print(f"Registered {s.switch_agent_name} (agent id {done['agent_id']}). Its key is in {args.env_file}, not shown.")
+
+
+def cmd_wire_rooms(args: argparse.Namespace, s: Settings) -> None:
+    """Fill in the room ids in .env once the template has created the rooms."""
+    from samepage.setup_local import SetupError, wire_rooms
+
+    if not (s.switch_agent_id and s.switch_agent_api_key):
+        raise SystemExit("wire-rooms: run `samepage connect` first.")
+    try:
+        updates = wire_rooms(s.switch_api_url, s.switch_agent_id, s.switch_agent_api_key, Path(args.env_file))
+    except SetupError as exc:
+        raise SystemExit(f"wire-rooms: {exc}") from exc
+    for key, value in updates.items():
+        print(f"{key}={value}")
+    print(f"Saved to {args.env_file}. Next: `make arbiter`.")
+
+
 def cmd_check_corpus(_: argparse.Namespace, s: Settings) -> None:
     from samepage.corpus import Corpus
 
@@ -157,6 +184,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--env-file", default=".env")
     p.set_defaults(fn=cmd_register)
     sub.add_parser("rooms", help="list the arbiter's rooms and their ids").set_defaults(fn=cmd_rooms)
+    p = sub.add_parser("connect", help="register the arbiter on the Switch server Console runs here (one step)")
+    p.add_argument("--switch-dir", default="~/Library/Application Support/switchdash")
+    p.add_argument("--env-file", default=".env")
+    p.set_defaults(fn=cmd_connect)
+    p = sub.add_parser("wire-rooms", help="write the SamePage room ids into .env (after the template)")
+    p.add_argument("--env-file", default=".env")
+    p.set_defaults(fn=cmd_wire_rooms)
     sub.add_parser("check-corpus", help="list sources, passages and ignored lines").set_defaults(fn=cmd_check_corpus)
     p = sub.add_parser("eval", help="score recorded agent answers and question matching")
     p.add_argument("--answers", help="answers-*.jsonl file (default: latest in reports/)")
