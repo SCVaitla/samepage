@@ -1,8 +1,0 @@
-warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
-All checks passed!
-warning: The `UV_NATIVE_TLS` environment variable is deprecated and will be removed in a future release. Use `UV_SYSTEM_CERTS` instead.
-Success: no issues found in 26 source files
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-87 passed, 1 warning in 8.05s
-bandit exit 0
