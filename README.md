@@ -4,6 +4,8 @@
 
 Companies keep the same product facts in many places: the spec, the website, the help center, the sales FAQ, support macros. Those copies drift apart. AI agents answering from them give inconsistent answers, and nobody notices until a customer does. SamePage asks **two different agents** the same question **without letting them see each other's answer**. When they disagree, or agree while the docs don't, it shows the evidence, asks the owners to rule, opens a pull request, and proves the fix with a retest.
 
+**Demo video (2:53):** https://youtu.be/hSOzp2xe0iI
+
 Built for Flip the Switch (Best Business Workflow). *Juniper Desk, the company in every example, is fictional.*
 
 > **Status (2026-11-06):** runs live on Switch Console 0.40.1 (server 0.31.0) with real Claude Code and Codex agents and a real GitHub repo. The full loop ran end to end: ask → sealed answers → card → `approve` → fixer opened [PR #1](https://github.com/SCVaitla/juniper-desk-docs/pull/1) → retest 0/4 → 4/4 → RESOLVED. Evaluation numbers below come from real agent answers.
