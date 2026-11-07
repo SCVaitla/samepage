@@ -275,6 +275,8 @@ def test_full_flow_ask_conflict_approve_pr_retest_resolved(tmp_path: Path) -> No
         retest = next(c for c in sw.in_room(ASK) if "Retest for case" in c)
         assert "0/3 before → 3/3 after" in retest
         assert arb.store.case(case_id)["state"] == "RESOLVED"  # type: ignore[index]
+        receipt = next(c for c in sw.in_room(ASK) if "resolution receipt" in c)
+        assert "0/3 before → 3/3 after" in receipt and "approve by" in receipt and "/pull/" in receipt
         types = [e["type"] for e in arb.store.history(case_id)]
         for expected in (
             "case_opened",

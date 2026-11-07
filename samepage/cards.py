@@ -12,7 +12,7 @@ BADGE = {
     Outcome.VERIFIED: ":white_check_mark: VERIFIED",
     Outcome.COMPATIBLE: ":ok: COMPATIBLE",
     Outcome.CONFLICT: ":rotating_light: CONFLICT",
-    Outcome.SOURCE_CONFLICT: ":warning: SOURCE_CONFLICT (agents agree, docs don't)",
+    Outcome.SOURCE_CONFLICT: ":warning: SOURCE_CONFLICT · consensus trap (agents agree, docs don't)",
     Outcome.UNSUPPORTED: ":grey_question: UNSUPPORTED",
     Outcome.RESOLVED: ":heavy_check_mark: RESOLVED",
 }

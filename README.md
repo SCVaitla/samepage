@@ -61,11 +61,12 @@ The card screenshot is from the first live ask, before two reading bugs were fix
 
 - **Sealed second opinion:** two agents answer separately; the audit log proves the order.
 - **Evidence or it didn't happen:** every quote is checked word for word at the cited lines; the quoted passage must be about the question, and the quote itself must state the value claimed.
-- **Agreement isn't proof:** the engine scans the docs for every passage about the same fact (found by the question's and both agents' topic words), so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`. Agreement it cannot cross-check is `UNSUPPORTED`, never `VERIFIED`.
+- **Consensus trap:** two agents agreeing doesn't mean the company's knowledge is right. The engine scans the docs for every passage about the same fact (found by the question's and both agents' topic words), so two agents agreeing on a stale fact still raise `SOURCE_CONFLICT`. Agreement it cannot cross-check is `UNSUPPORTED`, never `VERIFIED`.
 - **Blast radius:** every place the wrong fact appears, and which team reads it.
 - **Owner routing:** the owners of the wrong docs are @mentioned and may approve the proposed fix (overrides and rejects need an approver).
 - **Drift patrol:** `patrol` re-asks everything known, before a customer does.
 - **Source trust ledger:** `trust` shows which docs keep losing rulings.
+- **Resolution receipt:** when a case resolves, one card sums it up from the audit records: both answers, the wrong docs and their owners, who ruled, the PR, and the retest (0/4 → 4/4). `receipt <case>` shows it again.
 - **Safe fix:** a PR that changes anything beyond the approved lines is refused, and the checked commit is what gets retested; nothing is ever auto-merged.
 
 ## Quickstart
@@ -82,7 +83,7 @@ The live demo (Switch Console, the two agents, the docs repo) is set up step by 
 ```
 ask <question>          patrol [full | on <ref> | holdout]
 approve <case> [why]    override <case> <file>     reject <case> <why>
-trust                   history <case or topic>    show <case>
+trust                   history <case or topic>    show <case>    receipt <case>
 ```
 
 ## Outcome states
@@ -166,4 +167,8 @@ Plain-language tour: [docs/WALKTHROUGH.md](docs/WALKTHROUGH.md).
 
 ## What we'd build next
 
-Patrol on every docs push (a webhook into the room), more value types, sentence embeddings for question matching, and per-team trust trends over time.
+- **Block drift before it ships:** run SamePage as a check on every docs pull request, and hold back a change that contradicts the approved spec.
+- **Nightly patrol:** schedule `patrol` and post a morning report of new contradictions.
+- **A guard behind one customer-facing bot:** a company with a single support chatbot runs SamePage behind it, so wrong facts are caught before the bot repeats them.
+- **Where teams already chat:** the same rooms over Switch's other chat bridges.
+- More value types (table cells, yes/no versus schedules), sentence embeddings for question matching, and per-team trust trends.

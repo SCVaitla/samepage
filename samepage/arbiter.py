@@ -40,6 +40,7 @@ from samepage.golden import load_golden, load_holdout
 from samepage.models import AgentAnswer, CaseResult
 from samepage.parse import parse_batch, timed_out
 from samepage.patrol import PatrolItem, RetestRow, patrol_report, retest_card, retest_summary
+from samepage.receipt import resolution_receipt
 from samepage.store import Store
 from samepage.trust import ledger
 from samepage.trust import render as render_trust
@@ -72,7 +73,7 @@ def is_own(body: str) -> bool:
     return body.startswith(MARKER) or body.rstrip().endswith(f"`{MARKER}`")
 
 
-COMMANDS = ("ask", "approve", "override", "reject", "show", "patrol", "trust", "history", "help")
+COMMANDS = ("ask", "receipt", "approve", "override", "reject", "show", "patrol", "trust", "history", "help")
 
 
 def _looks_like_command(body: str) -> bool:
@@ -223,13 +224,15 @@ class Arbiter:
             else:
                 ref = words[words.index("on") + 1] if "on" in words[:-1] else "main"
                 await self.patrol(full="full" in words, ref=ref)
+        elif verb == "receipt" and CASE_ID.match(rest):
+            await self.say(resolution_receipt(self.store, rest))
         elif verb == "trust":
             await self.say(render_trust(ledger(self.store)))
         elif verb == "history" and rest:
             await self.say(self.history(rest))
         else:
             await self.say(
-                "Commands: `ask <question>` · `show <case>` · `approve <case>` · "
+                "Commands: `ask <question>` · `show <case>` · `receipt <case>` · `approve <case>` · "
                 "`override <case> <file>` · `reject <case> <why>` · `patrol [full]` · `trust` · "
                 "`history <case or topic>` (no @mention needed in this room)"
             )
@@ -417,6 +420,7 @@ class Arbiter:
         await self.say(retest_card(case_id, ref, table, ruling.truth_value))
         if summary["all_fixed"]:
             self.store.set_state(case_id, "RESOLVED")
+            await self.say(resolution_receipt(self.store, case_id))
         return summary
 
     # ---- patrol, history ----------------------------------------------------------------------
