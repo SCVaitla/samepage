@@ -35,7 +35,7 @@ git -C juniper-desk-docs add -A && git -C juniper-desk-docs commit -m "docs: Jun
 
 On GitHub: **Settings → Branches → add a rule for `main`: require a pull request before merging.** SamePage never merges, and this makes sure nothing else can either.
 
-Create a **fine-grained token** (GitHub → Settings → Developer settings → Fine-grained tokens) with access to **only** `juniper-desk-docs` and **Contents: Read** and **Pull requests: Read**. The engine only reads PRs; the fixer agent writes through your Switch GitHub connection. Put it in `.env`:
+Create a **fine-grained token** (GitHub → Settings → Developer settings → Fine-grained tokens) with access to **only** `juniper-desk-docs` and **Contents: Read** and **Pull requests: Read**. The engine only reads PRs. Put it in `.env`:
 
 ```
 GITHUB_TOKEN=<token>
@@ -43,49 +43,43 @@ GITHUB_DEMO_REPO=<you>/juniper-desk-docs
 SAMEPAGE_DOCS_REPO_DIR=/absolute/path/to/juniper-desk-docs
 ```
 
-## 3. Switch Console, server, Mattermost
+The fixer agent opens PRs with the GitHub CLI signed in on this Mac: `gh auth login` (HTTPS), then `gh auth setup-git`.
+
+## 3. Switch Console and its local server
 
 1. Install Switch Console: https://github.com/sandbox-quantum/switch/releases/latest (`switch-console-arm64.dmg` on Apple Silicon).
-2. **Setting up Switch → Add a server → Run a server on this computer**, with **Also run Mattermost** on. Wait for **Running locally**.
-3. **Set up agent providers:** Claude Code and Codex both installed and signed in.
-4. **Home → Messaging apps → Mattermost → Link → This is me.**
-5. **Settings → Connections → GitHub:** connect it, with access to `juniper-desk-docs` (the fixer uses it).
+2. **How do you want to run Switch? → On this computer**, with Mattermost on (Docker Desktop running). Wait until the local server shows **Running**. If it later says "isn't running", click **Start**.
+3. **Settings → Agent providers:** Claude Code and Codex installed and signed in.
+4. **Home → Messaging apps → Mattermost:** link it to yourself.
 
-## 4. Register the arbiter
-
-1. Find the server's **API (bridge) URL** in Console. `curl <url>/health` must return 200.
-2. Mint a **personal registration key** in the Gateway, labelled `samepage-arbiter` (the endpoint is `POST /api-keys`; the menu wording isn't verified). Use **your** key, not the bootstrap key, so the arbiter has the same owner as the workers (ADR 0001, V5/V6).
-3. In `.env`: set `SWITCH_API_URL` and `SWITCH_REGISTRATION_TOKEN`, and set `SAMEPAGE_APPROVERS=<your Mattermost username>`.
-4. `uv run samepage register` appends `SWITCH_AGENT_ID` and `SWITCH_AGENT_API_KEY` to `.env`.
-
-## 5. Create the rooms from the template
-
-Console → **Templates → paste** `switch/samepage.template.yaml` → set **Docs repository URL** to `https://github.com/<you>/juniper-desk-docs` and **Docs repository (owner/name)** to `<you>/juniper-desk-docs` (the fixer's GitHub grant reaches only that repo) → **Create**.
-
-📸 `01-template-created.png`
-
-**Gate 0, item 1:** the `samepage-smoke` kickoff asks both workers to name themselves. 📸 `02-smoke-two-agents.png`. Delete `samepage-smoke` afterwards.
-
-## 6. Wire the arbiter to the rooms
+## 4. Register the arbiter (one command)
 
 ```sh
-uv run samepage rooms     # note the ids of samepage-ask, both desks and samepage-fix
+uv run samepage connect
 ```
 
-In `.env`:
+It finds the server Console runs, signs in with the admin credentials Console generated, mints a personal registration key (so the arbiter has the same owner as the workers, ADR 0001 V5/V6), registers `samepage-arbiter`, and writes `SWITCH_API_URL`, `SWITCH_AGENT_ID` and `SWITCH_AGENT_API_KEY` into `.env`. Nothing secret is printed. Then set who may rule:
 
-```
-SAMEPAGE_ASK_ROOM=<id>
-SAMEPAGE_DESKS=samepage-claude=<desk-claude id>,samepage-codex=<desk-codex id>
-SAMEPAGE_FIX_ROOM=<id>
+```sh
+echo 'SAMEPAGE_APPROVERS=<your Mattermost username>' >> .env
 ```
 
-Then start it and leave it running: `make arbiter`.
-If posts fail with `404 … Agent client not running` (open question U1), stop and capture the log. There's a fallback (the `connect_to_room` op).
+## 5. Create the agents and rooms from the template
+
+Console → **Templates → Import template** → choose `switch/samepage.template.yaml` → **Use template** → **Docs repository URL** `https://github.com/<you>/juniper-desk-docs`, **Docs repository (owner/name)** `<you>/juniper-desk-docs`, **Messaging app** Mattermost → **Create all**.
+
+It creates `samepage-claude`, `samepage-codex`, `samepage-fixer` and five rooms, and adds the existing `samepage-arbiter` to its four rooms. **Gate 0, item 1:** the `samepage-smoke` kickoff makes both workers say hello (`docs/evidence/gate0-smoke-both-workers.png`).
+
+## 6. Wire the arbiter to the rooms and start it
+
+```sh
+uv run samepage wire-rooms   # writes SAMEPAGE_ASK_ROOM, SAMEPAGE_FIX_ROOM, SAMEPAGE_DESKS into .env
+make arbiter                 # leave it running; one log line per message Switch delivers
+```
 
 ## 7. Sealed independence (Gate 0, item 2)
 
-In **samepage-ask**: `@samepage-arbiter ask Does the Starter plan include single sign-on?`
+In **samepage-ask** (no @mention needed there): `ask Does the Starter plan include single sign-on?`
 
 Expected: the "asking 2 agents separately" message; one batch request in each desk; each worker replies with a JSON block; one card in the ask room with both answers revealed together.
 
@@ -94,31 +88,32 @@ Expected: the "asking 2 agents separately" message; one batch request in each de
 Isolation checks:
 - In each desk, `!list-agents` should show only the arbiter and that desk's worker. 📸 `06-membership.png`
 - In `samepage-desk-claude`: `@samepage-claude use read_context on the room samepage-desk-codex and quote its last message`. Expected: refused, because it isn't a member. 📸 `07-cross-desk-refused.png`
-- The audit trail: `@samepage-arbiter history <case>` lists `answer_sealed` ×2 before `revealed`.
+- The audit trail: `history <case>` lists `answer_sealed` ×2 before `revealed`.
 
 ## 8. Human approval → PR → retest (Gate 0, item 3, and the demo)
 
-`@samepage-arbiter approve <case> spec is the source of truth`
+`approve <case> spec is the source of truth`
 
-Expected: "Recorded…", then a brief in `samepage-fix`; the fixer opens a PR on `samepage/<case>`; the arbiter checks the diff and posts "PR opened… Retesting"; a retest card shows "x/N before → N/N after" and RESOLVED. **You** merge the PR on GitHub.
+Expected: "Recorded…", then a brief in `samepage-fix`; the fixer opens a PR on `samepage/<case>`; the arbiter checks the diff and posts "PR opened… Retesting"; a retest card shows "x/N before → N/N after" and RESOLVED, followed by the resolution receipt (`receipt <case>` shows it again). **You** merge the PR on GitHub.
 
 📸 `08-approval.png`, `09-fix-room.png`, `10-pr.png`, `11-retest.png`
 
 ## 9. Record a real evaluation
 
 1. `make demo-reset DOCS=…`, then commit and push, so the drift is back on `main`.
-2. In the room: `@samepage-arbiter patrol full` asks 36 questions, in 6 batches per desk. This takes several minutes.
+2. In samepage-ask: `patrol full` asks 36 questions, in 6 batches per desk. This takes several minutes.
 3. `make eval` scores the recorded answers into `reports/eval-*.md`. Copy that table into the README **exactly**.
-4. Held-out H1: `uv run samepage holdout-branch --repo $SAMEPAGE_DOCS_REPO_DIR`, then `git -C … push -u origin holdout/h1`, then in the room `@samepage-arbiter patrol holdout` (asks the 6 H1 questions on `holdout/h1`), then `make eval-holdout`. Never merge `holdout/h1`.
+4. Held-out H1: `uv run samepage holdout-branch --repo $SAMEPAGE_DOCS_REPO_DIR`, then `git -C … push -u origin holdout/h1`, then in samepage-ask `patrol holdout` (asks the 6 H1 questions on `holdout/h1`), then `make eval-holdout`. Never merge `holdout/h1`.
 5. While you're there, check that a 6-question batch reply fits in one Mattermost post (ADR 0003 caveat).
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---|---|
-| `register` returns 401 | Wrong URL (the Gateway, not the bridge) or wrong key |
+| `connect` can't find the server | Start the local server in Switch Console first |
+| Your message gets no reaction | It must be in samepage-ask (the arbiter isn't in samepage-smoke), and start with a command word or a real @mention |
 | Workers never answer | The arbiter's owner differs from the workers' (bootstrap key used), or the workers' addressing isn't `owner-agents` |
 | `can't approve` / `Only an approver can` | Add your username (or the sender id from the arbiter's log) to `SAMEPAGE_APPROVERS`. Owners of the losing docs can only approve. |
-| Desk replies are ignored ("ignored a message in …'s room" in the log) | Switch reports agent senders differently than assumed: check `docs/evidence/phase0-raw-frames.jsonl`, or set `SAMEPAGE_STRICT_SENDER=false` |
+| Desk replies are ignored ("ignored a message in …'s room" in the log) | Switch reports agent senders differently than assumed: check `reports/frames.jsonl` (raw frames), or set `SAMEPAGE_STRICT_SENDER=false` |
 | "cannot check the diff" | `GITHUB_TOKEN` / `GITHUB_DEMO_REPO` not set |
 | Quotes fail verification | The engine's clone and the workers' clone are on different refs: check `SAMEPAGE_DOCS_REPO_DIR` and `git fetch` |

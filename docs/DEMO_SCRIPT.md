@@ -1,13 +1,22 @@
 # Demo video script (≤ 3:00)
 
-Record against the live setup (`docs/RUNBOOK.md`). Agent waits may be sped up; say "sped up" on screen when you do.
+The submitted video (about 2:40) is a captioned walkthrough of screenshots from the live run on 2026-11-06 (real Switch, Claude Code, Codex and GitHub). Every screen in it is real output; nothing is mocked.
 
-| Time | Show | Say |
+| # | Shows | Caption says |
 |---|---|---|
-| 0:00–0:15 | Title card | "Ask two AIs the same question and you get two answers. We made that the alarm." |
-| 0:15–0:25 | Switch Console: the SamePage room group (ask, two private desks, fix) | "Everything runs in Switch. Each agent answers in its own private room, so neither can copy the other." |
-| 0:25–1:05 | `@samepage-arbiter ask Does the Starter plan include single sign-on?` → the desks working → the card | "Claude Code says yes, Codex says no. SamePage checks every quote against the file, then scans all our docs. The blast radius shows the wrong 'yes' in two places, the website and the sales FAQ, and pings their owners. And it ignored a line in the help center trying to instruct AI agents." |
-| 1:05–1:35 | `@samepage-arbiter patrol` → drift report with the seats SOURCE_CONFLICT | "Patrol re-asks everything we know. Here both agents agree Starter has 10 seats, and they're both wrong: the approved spec says 5. Agreement isn't proof." |
-| 1:35–2:15 | `approve <case>` → fix room brief → PR on GitHub (show the small diff) → retest card "0/3 → 3/3", RESOLVED | "The owner approves in the room. A fixer agent opens a PR that touches only those lines; SamePage checks the diff, retests both agents on the branch, and a human merges." |
-| 2:15–2:35 | `@samepage-arbiter trust` → ledger; then `reports/eval-*.md` | "Over time the trust ledger shows which docs keep being wrong. And here are our real eval numbers, including a held-out case we never tuned on." *(Read the real numbers from the report. Never script them.)* |
-| 2:35–3:00 | README "How Switch is used" | "Without Switch there are no sealed rooms, no agents to compare, and no place for the human to rule. Next: patrol on every docs push, and more value types." |
+| 1 | Title | Two AI agents agreeing isn't proof. SamePage finds the docs behind wrong answers, gets a human to rule, and proves the fix. |
+| 2 | The problem | Product facts live in many docs that drift apart; AI repeats whichever it reads. |
+| 3 | The idea | The consensus trap: two agents reading the same stale page agree and are both wrong, so SamePage checks every doc even when they agree. |
+| 4 | The workflow | Ask → sealed answers in private rooms → quotes checked, all docs scanned → card → human approves → fixer PR → retest → receipt. |
+| 5 | Switch template | One template creates 3 agents and 5 rooms. |
+| 6 | Smoke room | Claude Code and Codex live in one room (Gate 0). |
+| 7–8 | The real card (`show db1488ad`) | Both agents correctly say no; SamePage still finds the website and sales FAQs saying yes, names their owners, ignores a planted injection line. |
+| 9 | samepage-fix | The owner approves; the fixer opens PR #1. |
+| 10 | PR #1 on GitHub | Only the approved lines change ("Yes" → "No, Enterprise only"). |
+| 11 | Retest card | 0/4 before → 4/4 after, RESOLVED. |
+| 12 | Resolution receipt | One summary from the audit records. |
+| 13 | A private desk during `patrol holdout` | The held-out questions answered in the JSON contract; caught 6/6. |
+| 14 | Results | Precision/recall 0.94/0.94, question matching 0.97, held-out 6/6, 87 tests, 93% coverage; misses listed in the README. |
+| 15 | Why Switch | SamePage is a Switch agent; sealing relies on room membership; without Switch it stops. |
+
+To re-record live instead: follow `docs/RUNBOOK.md`, ask the SSO question in samepage-ask, `approve` it, wait for the retest and receipt, then show the README evaluation.

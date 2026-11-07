@@ -117,8 +117,10 @@ Real runs: `patrol full` asked both agents all 36 golden questions (C1–C6, 6 w
 |---|---|---|
 | Conflict detection precision | 1.00 (TP 6, FP 0) | ≥ 0.90 |
 | Conflict detection recall | 1.00 (FN 0) | ≥ 0.80 |
+| False alarm rate on COMPATIBLE | not run (0/0) | 0 |
 | Exact state accuracy | 0.00 (0/6) | n/a |
 | Evidence validity (claims with verified quotes) | 0.95 (18/19) | 1.00 of displayed claims |
+| Both agents right and consistent (before fix) | 0.00 (0/6) | n/a (after-fix comes from retest) |
 
 **H1 detected: 6/6.** All six came back `SOURCE_CONFLICT`, not the expected `CONFLICT`: both agents read the spec correctly (365 days), and SamePage still found the pricing page saying 90.
 

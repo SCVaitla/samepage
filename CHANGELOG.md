@@ -1,5 +1,21 @@
 # Changelog
 
+
+## 2026-11-06 / 07: live run
+
+### Added
+- `samepage connect` and `samepage wire-rooms`: one-command setup against Switch Console's local server.
+- Resolution receipt (posted when a case resolves; `receipt <case>`), and the "consensus trap" label on SOURCE_CONFLICT cards.
+- Commands in samepage-ask work without the @mention; one log line and a raw frame (`reports/frames.jsonl`) per Switch message.
+- Real evaluation runs: `reports/eval-20261106T220548Z.md` (golden) and `reports/eval-holdout-20261106T220951Z.md` (H1), with the recorded answers.
+
+### Fixed (found by real agent answers)
+- A quote wrapped across lines was read as two clauses, and "not available (Enterprise only)" was read as yes. The real replies are now a test (`tests/test_live_replies.py`).
+- Retest sub-cases stayed OPEN; the ask room got a Switch warning when SamePage mentioned the fixer.
+
+### Changed
+- The fixer opens PRs with the local `gh` sign-in: Console's GitHub connector needs an https server address.
+
 ## 0.1.0 (unreleased, 2026-11-05)
 
 ### Added

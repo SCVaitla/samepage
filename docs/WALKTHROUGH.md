@@ -11,7 +11,7 @@ Ask two different AI agents the same question without letting them see each othe
 - One template creates three agents (Claude Code worker, Codex worker, fixer) and four rooms.
 - SamePage itself is a Switch **agent** called `samepage-arbiter`. It listens to its rooms over a server-sent-events stream and posts with plain HTTP (`samepage/switch_client.py`).
 - **Why the answers are sealed:** each worker has its own private "desk" room, and Switch only lets an agent read rooms it belongs to. The arbiter posts the question in both desks, waits for both replies, saves a fingerprint (SHA-256) and time for each, and only then shows both answers together in the ask room. Workers never join the ask room, so they never see the reveal.
-- People talk to the arbiter with @mentions (`@samepage-arbiter ask …`), because Switch doesn't forward custom slash commands to agents.
+- People talk to the arbiter with @mentions (`@samepage-arbiter ask …`), because Switch doesn't forward custom slash commands to agents. In samepage-ask a message that starts with a command word (`ask …`, `approve …`) works without the mention.
 
 ## 2. What the agents send back (`samepage/models.py`, `samepage/parse.py`)
 
